@@ -1,0 +1,309 @@
+"""
+WebDAV Service for file storage operations
+
+Provides WebDAV client functionality for uploading files, managing directories,
+and checking storage information.
+
+Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
+"""
+
+import re
+from dataclasses import dataclass
+from typing import Optional, Callable
+from webdav4.client import Client
+import httpx
+
+
+@dataclass
+class StorageInfo:
+    """Storage information"""
+    total_space: int  # bytes
+    used_space: int
+    free_space: int
+    is_connected: bool
+
+
+class WebDAVService:
+    """WebDAV service for file storage operations"""
+    
+    def __init__(self):
+        """Initialize WebDAV service"""
+        self._client: Optional[Client] = None
+        self._config: Optional['WebDAVConfig'] = None
+        self._http_client: Optional[httpx.AsyncClient] = None
+    
+    async def connect(self, config: 'WebDAVConfig') -> bool:
+        """
+        Connect to WebDAV storage
+        
+        Args:
+            config: WebDAV configuration
+            
+        Returns:
+            True if connection successful, False otherwise
+        """
+        from bot.database import WebDAVConfig
+        
+        # Disconnect from existing connection if any
+        if self._client is not None:
+            await self.disconnect()
+        
+        try:
+            # Create HTTP client with basic auth
+            self._http_client = httpx.AsyncClient(
+                auth=(config.username, config.password),
+                timeout=30.0,
+                follow_redirects=True
+            )
+            
+            # Create WebDAV client
+            self._client = Client(
+                base_url=config.url,
+                auth=(config.username, config.password)
+            )
+            
+            # Store config
+            self._config = config
+            
+            # Test connection
+            connection_ok = await self.test_connection()
+            
+            # If test fails, clean up
+            if not connection_ok:
+                await self.disconnect()
+            
+            return connection_ok
+            
+        except Exception as e:
+            self._client = None
+            self._config = None
+            if self._http_client:
+                await self._http_client.aclose()
+                self._http_client = None
+            raise ConnectionError(f"Failed to connect to WebDAV storage: {str(e)}")
+    
+    async def disconnect(self) -> None:
+        """Disconnect from WebDAV storage"""
+        if self._http_client:
+            await self._http_client.aclose()
+            self._http_client = None
+        
+        self._client = None
+        self._config = None
+    
+    async def test_connection(self) -> bool:
+        """
+        Test WebDAV connection
+        
+        Returns:
+            True if connection is working, False otherwise
+        """
+        if self._client is None or self._http_client is None:
+            return False
+        
+        try:
+            # Try to list root directory
+            response = await self._http_client.request("PROPFIND", self._config.url, headers={"Depth": "0"})
+            return response.status_code in (200, 207)  # 207 Multi-Status is also valid
+        except Exception:
+            return False
+
+    async def get_storage_info(self) -> StorageInfo:
+        """
+        Get storage information
+        
+        Returns:
+            Storage information including space usage
+        """
+        if self._client is None or self._http_client is None:
+            return StorageInfo(
+                total_space=0,
+                used_space=0,
+                free_space=0,
+                is_connected=False
+            )
+        
+        try:
+            # Send PROPFIND request to get quota information
+            response = await self._http_client.request(
+                "PROPFIND",
+                self._config.url,
+                headers={"Depth": "0"},
+                content="""<?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                    <D:prop>
+                        <D:quota-available-bytes/>
+                        <D:quota-used-bytes/>
+                    </D:prop>
+                </D:propfind>"""
+            )
+            
+            if response.status_code not in (200, 207):
+                # If quota info not available, return connected status with unknown space
+                return StorageInfo(
+                    total_space=0,
+                    used_space=0,
+                    free_space=0,
+                    is_connected=True
+                )
+            
+            # Parse XML response to extract quota information
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.text)
+            
+            # Define namespaces
+            namespaces = {'D': 'DAV:'}
+            
+            # Extract quota information
+            quota_available = root.find('.//D:quota-available-bytes', namespaces)
+            quota_used = root.find('.//D:quota-used-bytes', namespaces)
+            
+            free_space = int(quota_available.text) if quota_available is not None and quota_available.text else 0
+            used_space = int(quota_used.text) if quota_used is not None and quota_used.text else 0
+            total_space = free_space + used_space
+            
+            return StorageInfo(
+                total_space=total_space,
+                used_space=used_space,
+                free_space=free_space,
+                is_connected=True
+            )
+            
+        except Exception:
+            # If we can't get quota info, return connected status with unknown space
+            return StorageInfo(
+                total_space=0,
+                used_space=0,
+                free_space=0,
+                is_connected=await self.test_connection()
+            )
+    
+    async def upload_file(
+        self,
+        local_path: str,
+        remote_path: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> bool:
+        """
+        Upload file to WebDAV storage
+        
+        Args:
+            local_path: Path to local file
+            remote_path: Remote path on WebDAV storage
+            progress_callback: Optional callback for progress updates (bytes_uploaded, total_bytes)
+            
+        Returns:
+            True if upload successful, False otherwise
+        """
+        if self._client is None or self._http_client is None:
+            raise ConnectionError("Not connected to WebDAV storage")
+        
+        try:
+            import os
+            import aiofiles
+            
+            # Get file size
+            file_size = os.path.getsize(local_path)
+            
+            # Read file in chunks and upload
+            chunk_size = 8192  # 8KB chunks
+            bytes_uploaded = 0
+            
+            async with aiofiles.open(local_path, 'rb') as f:
+                # Read entire file for now (streaming upload can be added later)
+                content = await f.read()
+                
+                # Upload file
+                response = await self._http_client.put(
+                    f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}",
+                    content=content
+                )
+                
+                if response.status_code not in (200, 201, 204):
+                    return False
+                
+                # Call progress callback with final progress
+                if progress_callback:
+                    progress_callback(file_size, file_size)
+                
+                return True
+                
+        except Exception as e:
+            raise IOError(f"Failed to upload file: {str(e)}")
+    
+    async def create_directory(self, path: str) -> bool:
+        """
+        Create directory on WebDAV storage
+        
+        Args:
+            path: Directory path to create
+            
+        Returns:
+            True if directory created or already exists, False otherwise
+        """
+        if self._client is None or self._http_client is None:
+            raise ConnectionError("Not connected to WebDAV storage")
+        
+        try:
+            # Check if directory already exists
+            if await self.file_exists(path):
+                return True
+            
+            # Create directory using MKCOL method
+            response = await self._http_client.request(
+                "MKCOL",
+                f"{self._config.url.rstrip('/')}/{path.lstrip('/')}"
+            )
+            
+            return response.status_code in (200, 201)
+            
+        except Exception:
+            return False
+    
+    async def file_exists(self, path: str) -> bool:
+        """
+        Check if file or directory exists on WebDAV storage
+        
+        Args:
+            path: Path to check
+            
+        Returns:
+            True if file/directory exists, False otherwise
+        """
+        if self._client is None or self._http_client is None:
+            raise ConnectionError("Not connected to WebDAV storage")
+        
+        try:
+            # Use HEAD request to check existence
+            response = await self._http_client.head(
+                f"{self._config.url.rstrip('/')}/{path.lstrip('/')}"
+            )
+            
+            return response.status_code == 200
+            
+        except Exception:
+            return False
+    
+    def sanitize_filename(self, filename: str) -> str:
+        """
+        Sanitize filename by replacing invalid characters
+        
+        Args:
+            filename: Original filename
+            
+        Returns:
+            Sanitized filename with invalid characters replaced by underscores
+        """
+        # Replace invalid characters with underscores
+        # Invalid characters: / \ : * ? " < > |
+        invalid_chars = r'[/\\:*?"<>|]'
+        sanitized = re.sub(invalid_chars, '_', filename)
+        
+        # Remove leading/trailing spaces and dots
+        sanitized = sanitized.strip('. ')
+        
+        # Ensure filename is not empty
+        if not sanitized:
+            sanitized = "unnamed"
+        
+        return sanitized
