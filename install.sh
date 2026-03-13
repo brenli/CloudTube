@@ -1,10 +1,12 @@
 #!/bin/bash
-# YouTube WebDAV Bot Installation Script
-# Requirements: 14.4, 14.5, 14.6
+# CloudTube Installation Script
+# Created by Kir
+# Requirements: Ubuntu 22.04/24.04
 
 set -e
 
-echo "🎬 YouTube WebDAV Bot - Installation Script"
+echo "🎬 CloudTube - Installation Script"
+echo "Your YouTube in the Cloud"
 echo "==========================================="
 echo ""
 
@@ -56,7 +58,7 @@ echo "✅ System dependencies installed"
 echo ""
 
 # Create installation directory
-INSTALL_DIR="/opt/youtube-webdav-bot"
+INSTALL_DIR="/opt/CloudTube"
 echo "📁 Creating installation directory: $INSTALL_DIR"
 
 if [ -d "$INSTALL_DIR" ]; then
@@ -92,13 +94,13 @@ echo ""
 
 # Create data directories
 echo "📁 Creating data directories..."
-sudo mkdir -p /var/lib/youtube-webdav-bot
-sudo mkdir -p /var/log/youtube-webdav-bot
-sudo mkdir -p /tmp/youtube-webdav-bot
+sudo mkdir -p /var/lib/CloudTube
+sudo mkdir -p /var/log/CloudTube
+sudo mkdir -p /tmp/CloudTube
 
-sudo chown $USER:$USER /var/lib/youtube-webdav-bot
-sudo chown $USER:$USER /var/log/youtube-webdav-bot
-sudo chown $USER:$USER /tmp/youtube-webdav-bot
+sudo chown $USER:$USER /var/lib/CloudTube
+sudo chown $USER:$USER /var/log/CloudTube
+sudo chown $USER:$USER /tmp/CloudTube
 
 echo "✅ Data directories created"
 echo ""
@@ -137,12 +139,12 @@ asyncio.run(init())
 
 # Install systemd service
 echo "🔧 Installing systemd service..."
-sudo cp systemd/youtube-webdav-bot.service /etc/systemd/system/
-sudo sed -i "s|/opt/youtube-webdav-bot|$INSTALL_DIR|g" /etc/systemd/system/youtube-webdav-bot.service
-sudo sed -i "s|User=youtube-bot|User=$USER|g" /etc/systemd/system/youtube-webdav-bot.service
+sudo cp systemd/cloudtube.service /etc/systemd/system/
+sudo sed -i "s|/opt/CloudTube|$INSTALL_DIR|g" /etc/systemd/system/cloudtube.service
+sudo sed -i "s|User=youtube-bot|User=$USER|g" /etc/systemd/system/cloudtube.service
 
 sudo systemctl daemon-reload
-sudo systemctl enable youtube-webdav-bot
+sudo systemctl enable cloudtube
 
 echo "✅ Systemd service installed"
 echo ""
@@ -151,8 +153,8 @@ echo "🎉 Installation complete!"
 echo ""
 echo "Next steps:"
 echo "1. Edit configuration: nano $INSTALL_DIR/.env"
-echo "2. Start the bot: sudo systemctl start youtube-webdav-bot"
-echo "3. Check status: sudo systemctl status youtube-webdav-bot"
-echo "4. View logs: sudo journalctl -u youtube-webdav-bot -f"
+echo "2. Start the bot: sudo systemctl start cloudtube"
+echo "3. Check status: sudo systemctl status cloudtube"
+echo "4. View logs: sudo journalctl -u cloudtube -f"
 echo ""
 echo "For more information, see README.md"

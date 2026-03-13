@@ -1,32 +1,99 @@
-# YouTube WebDAV Bot
+# CloudTube
 
-Telegram-бот для автоматизированной загрузки видео с YouTube на внешнее WebDAV хранилище.
+<div align="center">
 
-## Возможности
+```
+   _____ _                 _ _______    _          
+  / ____| |               | |__   __|  | |         
+ | |    | | ___  _   _  __| |  | |_   _| |__   ___ 
+ | |    | |/ _ \| | | |/ _` |  | | | | | '_ \ / _ \
+ | |____| | (_) | |_| | (_| |  | | |_| | |_) |  __/
+  \_____|_|\___/ \__,_|\__,_|  |_|\__,_|_.__/ \___|
+```
 
-- 📥 Загрузка отдельных видео с YouTube
-- 📋 Загрузка целых плейлистов
-- 🎬 Выбор качества видео (best, 1080p, 720p, 480p, 360p)
-- 🔔 Настраиваемые уведомления
-- ⏸️ Приостановка и возобновление загрузок
-- 📊 Просмотр истории загрузок
-- 💾 Автоматическая организация файлов
-- 🔄 Восстановление после перезапуска
-- 🔒 Безопасное хранение учетных данных
+### 🎬 Your YouTube in the Cloud
 
-## Требования
+*Telegram bot for automated YouTube video downloads to WebDAV storage*
 
-- Ubuntu 22.04 или 24.04 LTS
-- Python 3.11+
-- 2GB RAM минимум
-- 2 CPU cores минимум
-- 10GB свободного места для временных файлов
-- WebDAV хранилище
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-86%20passed-brightgreen.svg)](tests/)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](README.md)
+
+**Created by [Kir](https://github.com/Kir-dev)** 👨‍💻
+
+[Features](#-features) • [Quick Start](#-quick-start) • [Installation](#-installation) • [Documentation](#-documentation)
+
+</div>
+
+---
+
+## ✨ Features
+
+- 📥 **Загрузка отдельных видео** с YouTube
+- 📋 **Загрузка целых плейлистов** с автоматической организацией
+- 🎬 **Выбор качества** видео (best, 1080p, 720p, 480p, 360p)
+- 🔔 **Настраиваемые уведомления** для каждой загрузки
+- ⏸️ **Управление загрузками** (пауза, возобновление, отмена)
+- 📊 **Просмотр истории** загрузок с фильтрацией
+- 💾 **Автоматическая организация** файлов в папки
+- 🔄 **Восстановление** после перезапуска
+- 🔒 **Безопасное хранение** учетных данных
+- 📈 **Мониторинг ресурсов** с автоматическим throttling
+
+## 🚀 Быстрый старт
+
+### 🪟 Windows
+
+```powershell
+git clone https://github.com/Kir-dev/CloudTube.git
+cd CloudTube
+.\setup.bat
+# Отредактируйте .env (откроется автоматически)
+.\venv\Scripts\Activate.ps1
+python -m bot.main
+```
+
+📖 **Подробная инструкция для Windows**: [WINDOWS_INSTALL.md](WINDOWS_INSTALL.md)
+
+### 🐧 Linux/Mac
+
+```bash
+git clone https://github.com/Kir-dev/CloudTube.git
+cd CloudTube
+chmod +x setup.sh && ./setup.sh
+nano .env  # Заполните конфигурацию
+source venv/bin/activate
+python -m bot.main
+```
+
+### Автоматическая установка (Linux)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | bash
+```
+
+📖 **Подробная инструкция**: [INSTALLATION.md](INSTALLATION.md)
+
+## 📋 Требования
+
+### Операционные системы
+- ✅ **Windows 10/11** - полная поддержка ([инструкция](WINDOWS_INSTALL.md))
+- ✅ **Ubuntu 22.04/24.04 LTS** - полная поддержка
+- ✅ **macOS** - базовая поддержка
+
+### Минимальные требования
+- **Python**: 3.11 или выше
+- **RAM**: 2GB минимум (рекомендуется 4GB)
+- **CPU**: 2 ядра минимум
+- **Диск**: 10GB свободного места
+- **FFmpeg**: Для обработки видео
+- **WebDAV**: Доступ к хранилищу
 
 ## Быстрая установка
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/user/youtube-webdav-bot/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | bash
 ```
 
 ## Ручная установка
@@ -34,8 +101,8 @@ curl -sSL https://raw.githubusercontent.com/user/youtube-webdav-bot/main/install
 ### 1. Клонирование репозитория
 
 ```bash
-git clone https://github.com/user/youtube-webdav-bot.git
-cd youtube-webdav-bot
+git clone https://github.com/Kir-dev/CloudTube.git
+cd CloudTube
 ```
 
 ### 2. Установка зависимостей
@@ -72,13 +139,7 @@ nano .env
 - `TELEGRAM_BOT_TOKEN` - токен вашего Telegram бота
 - `TELEGRAM_OWNER_ID` - ваш Telegram ID
 
-### 5. Инициализация базы данных
-
-```bash
-python -m bot.database init
-```
-
-### 6. Запуск
+### 5. Запуск
 
 ```bash
 python -m bot.main
@@ -87,10 +148,10 @@ python -m bot.main
 ## Установка как системный сервис
 
 ```bash
-sudo cp systemd/youtube-webdav-bot.service /etc/systemd/system/
+sudo cp systemd/cloudtube.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable youtube-webdav-bot
-sudo systemctl start youtube-webdav-bot
+sudo systemctl enable cloudtube
+sudo systemctl start cloudtube
 ```
 
 ## Использование
@@ -131,18 +192,18 @@ TELEGRAM_BOT_TOKEN=your_bot_token_here
 TELEGRAM_OWNER_ID=your_telegram_id_here
 
 # Database
-DATABASE_PATH=/var/lib/youtube-webdav-bot/bot.db
+DATABASE_PATH=/var/lib/CloudTube/bot.db
 
 # Downloads
-TEMP_DOWNLOAD_PATH=/tmp/youtube-webdav-bot
+TEMP_DOWNLOAD_PATH=/tmp/CloudTube
 MAX_CONCURRENT_DOWNLOADS=2
 
 # Logging
 LOG_LEVEL=INFO
-LOG_PATH=/var/log/youtube-webdav-bot
+LOG_PATH=/var/log/CloudTube
 ```
 
-Подробное описание всех параметров см. в [CONFIGURATION.md](CONFIGURATION.md)
+Подробное описание всех параметров см. в [.env.example](.env.example)
 
 ## Мониторинг
 
@@ -150,32 +211,32 @@ LOG_PATH=/var/log/youtube-webdav-bot
 
 ```bash
 # Системные логи
-sudo journalctl -u youtube-webdav-bot -f
+sudo journalctl -u cloudtube -f
 
 # Логи приложения
-tail -f /var/log/youtube-webdav-bot/bot.log
+tail -f logs/bot.log
 ```
 
 ### Статус сервиса
 
 ```bash
-sudo systemctl status youtube-webdav-bot
+sudo systemctl status cloudtube
 ```
 
 ### Перезапуск
 
 ```bash
-sudo systemctl restart youtube-webdav-bot
+sudo systemctl restart cloudtube
 ```
 
 ## Обновление
 
 ```bash
-cd /opt/youtube-webdav-bot
+cd /opt/CloudTube
 git pull
 source venv/bin/activate
 pip install -r requirements.txt --upgrade
-sudo systemctl restart youtube-webdav-bot
+sudo systemctl restart cloudtube
 ```
 
 ## Резервное копирование
@@ -184,25 +245,25 @@ sudo systemctl restart youtube-webdav-bot
 
 ```bash
 # Ручное резервное копирование
-sqlite3 /var/lib/youtube-webdav-bot/bot.db ".backup '/backup/bot.db'"
+sqlite3 /var/lib/CloudTube/bot.db ".backup '/backup/bot.db'"
 
 # Автоматическое резервное копирование (cron)
-0 2 * * * sqlite3 /var/lib/youtube-webdav-bot/bot.db ".backup '/backup/bot-$(date +\%Y\%m\%d).db'"
+0 2 * * * sqlite3 /var/lib/CloudTube/bot.db ".backup '/backup/bot-$(date +\%Y\%m\%d).db'"
 ```
 
 ## Устранение неполадок
 
 ### Бот не отвечает
 
-1. Проверьте статус сервиса: `sudo systemctl status youtube-webdav-bot`
-2. Проверьте логи: `sudo journalctl -u youtube-webdav-bot -n 50`
+1. Проверьте статус сервиса: `sudo systemctl status cloudtube`
+2. Проверьте логи: `sudo journalctl -u cloudtube -n 50`
 3. Проверьте токен бота в `.env`
 
 ### Ошибки загрузки
 
 1. Проверьте подключение к WebDAV: `/status`
 2. Проверьте доступное место в хранилище
-3. Проверьте логи загрузки: `tail -f /var/log/youtube-webdav-bot/bot.log`
+3. Проверьте логи загрузки: `tail -f logs/bot.log`
 
 ### Высокое использование памяти
 
@@ -232,7 +293,7 @@ pytest --cov=bot --cov-report=html
 ### Структура проекта
 
 ```
-youtube-webdav-bot/
+CloudTube/
 ├── bot/                    # Основной код
 │   ├── auth.py            # Аутентификация
 │   ├── bot_handler.py     # Telegram бот
@@ -253,20 +314,46 @@ youtube-webdav-bot/
 └── README.md              # Документация
 ```
 
-## Лицензия
+## 📄 License
 
-MIT License
+MIT License - see [LICENSE](LICENSE) file for details
 
-## Поддержка
+Copyright (c) 2026 Kir
 
-Если у вас возникли вопросы или проблемы:
+## 👨‍💻 Author
 
-1. Проверьте [документацию](README.md)
-2. Посмотрите [примеры использования](USAGE.md)
-3. Создайте [issue](https://github.com/user/youtube-webdav-bot/issues)
+**CloudTube** is created and maintained by **Kir**
 
-## Благодарности
+- 🌟 If you like this project, give it a star!
+- 🐛 Found a bug? [Open an issue](https://github.com/Kir-dev/CloudTube/issues)
+- 💡 Have an idea? [Contribute](CONTRIBUTING.md)!
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## 💬 Support
+
+If you have questions or problems:
+
+1. Check the [documentation](README.md)
+2. See [installation guide](INSTALLATION.md)
+3. Open an [issue](https://github.com/Kir-dev/CloudTube/issues)
+
+## 🙏 Acknowledgments
 
 - [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) - Telegram Bot API
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloader
 - [webdav4](https://github.com/skshetry/webdav4) - WebDAV client
+
+---
+
+<div align="center">
+
+**CloudTube** - Your YouTube in the Cloud
+
+Made with ❤️ by [Kir](https://github.com/Kir-dev)
+
+⭐ Star this project if you find it useful!
+
+</div>

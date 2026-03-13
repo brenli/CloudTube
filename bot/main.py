@@ -109,8 +109,19 @@ async def main():
             db
         ))
     
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, signal_handler)
+    # Windows and Unix have different signal handling
+    import platform
+    if platform.system() != 'Windows':
+        # Unix-like systems
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.add_signal_handler(sig, signal_handler)
+    else:
+        # Windows - use signal.signal instead
+        def windows_signal_handler(signum, frame):
+            signal_handler()
+        
+        signal.signal(signal.SIGINT, windows_signal_handler)
+        signal.signal(signal.SIGTERM, windows_signal_handler)
     
     log_critical_event("Bot started successfully")
     

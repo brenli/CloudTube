@@ -1,0 +1,25 @@
+[Unit]
+Description=CloudTube - Your YouTube in the Cloud
+After=network.target
+
+[Service]
+Type=simple
+User=cloudtube
+WorkingDirectory=/opt/CloudTube
+Environment="PATH=/opt/CloudTube/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+EnvironmentFile=/opt/CloudTube/.env
+ExecStart=/opt/CloudTube/venv/bin/python -m bot.main
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/CloudTube/data /opt/CloudTube/logs /opt/CloudTube/temp
+
+[Install]
+WantedBy=multi-user.target
