@@ -86,7 +86,7 @@ mkdir C:\Projects
 cd C:\Projects
 
 # Клонируйте репозиторий
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 ```
 
@@ -383,4 +383,4 @@ python -m bot.main
 **Нужна помощь?**
 - [INSTALLATION.md](INSTALLATION.md) - Полная документация
 - [README.md](README.md) - Общая информация
-- [Issues](https://github.com/Kir-dev/CloudTube/issues) - Сообщить о проблеме
+- [Issues](https://github.com/brenli/CloudTube/issues) - Сообщить о проблеме

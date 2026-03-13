@@ -12,8 +12,8 @@ Make it easy for anyone to save their favorite YouTube content to their personal
 
 **Kir** - Creator and Maintainer
 
-- GitHub: [@Kir-dev](https://github.com/Kir-dev)
-- Project: [CloudTube](https://github.com/Kir-dev/CloudTube)
+- GitHub: [@brenli](https://github.com/brenli)
+- Project: [CloudTube](https://github.com/brenli/CloudTube)
 
 ## 📊 Project Stats
 

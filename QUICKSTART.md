@@ -4,7 +4,7 @@
 
 ```powershell
 # 1. Клонируйте репозиторий
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 
 # 2. Запустите установку
@@ -22,7 +22,7 @@ python -m bot.main
 
 ```bash
 # 1. Клонируйте репозиторий
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 
 # 2. Запустите установку
@@ -68,5 +68,5 @@ python -m bot.main
 
 ## Нужна помощь?
 
-- Проверьте [Issues](https://github.com/Kir-dev/CloudTube/issues)
+- Проверьте [Issues](https://github.com/brenli/CloudTube/issues)
 - Создайте новый Issue

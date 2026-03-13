@@ -61,7 +61,7 @@
 ```powershell
 # Откройте PowerShell
 cd C:\Projects
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 ```
 
@@ -105,7 +105,7 @@ python -m bot.main
 
 ```bash
 # Скачайте и запустите скрипт установки
-curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/brenli/CloudTube/main/install.sh | bash
 ```
 
 Скрипт автоматически:
@@ -169,7 +169,7 @@ sudo apt install -y \
 
 ```bash
 # Клонирование
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 ```
 
@@ -531,7 +531,7 @@ python -m bot.main  # База создастся автоматически
 
 Если у вас возникли проблемы:
 
-1. Проверьте [Issues](https://github.com/Kir-dev/CloudTube/issues)
+1. Проверьте [Issues](https://github.com/brenli/CloudTube/issues)
 2. Создайте новый Issue с описанием проблемы
 3. Приложите логи и конфигурацию (без токенов!)
 

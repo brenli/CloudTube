@@ -4,7 +4,7 @@ First off, thank you for considering contributing to CloudTube! 🎉
 
 ## 👨‍💻 About the Project
 
-CloudTube is created and maintained by **Kir**. It's a Telegram bot that makes it easy to download YouTube videos to your WebDAV storage.
+CloudTube is created and maintained by **Kir** ([@brenli](https://github.com/brenli)). It's a Telegram bot that makes it easy to download YouTube videos to your WebDAV storage.
 
 ## 🤝 How to Contribute
 
@@ -59,7 +59,7 @@ pytest tests/test_download.py
 
 ```bash
 # Clone the repo
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 
 # Setup development environment

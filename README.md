@@ -20,7 +20,7 @@
 [![Tests](https://img.shields.io/badge/tests-86%20passed-brightgreen.svg)](tests/)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](README.md)
 
-**Created by [Kir](https://github.com/Kir-dev)** 👨‍💻
+**Created by [Kir](https://github.com/brenli)** 👨‍💻
 
 [Features](#-features) • [Quick Start](#-quick-start) • [Installation](#-installation) • [Documentation](#-documentation)
 
@@ -46,7 +46,7 @@
 ### 🪟 Windows
 
 ```powershell
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 .\setup.bat
 # Отредактируйте .env (откроется автоматически)
@@ -59,7 +59,7 @@ python -m bot.main
 ### 🐧 Linux/Mac
 
 ```bash
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 chmod +x setup.sh && ./setup.sh
 nano .env  # Заполните конфигурацию
@@ -70,7 +70,7 @@ python -m bot.main
 ### Автоматическая установка (Linux)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/brenli/CloudTube/main/install.sh | bash
 ```
 
 📖 **Подробная инструкция**: [INSTALLATION.md](INSTALLATION.md)
@@ -93,7 +93,7 @@ curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | 
 ## Быстрая установка
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/brenli/CloudTube/main/install.sh | bash
 ```
 
 ## Ручная установка
@@ -101,7 +101,7 @@ curl -sSL https://raw.githubusercontent.com/Kir-dev/CloudTube/main/install.sh | 
 ### 1. Клонирование репозитория
 
 ```bash
-git clone https://github.com/Kir-dev/CloudTube.git
+git clone https://github.com/brenli/CloudTube.git
 cd CloudTube
 ```
 
@@ -325,7 +325,7 @@ Copyright (c) 2026 Kir
 **CloudTube** is created and maintained by **Kir**
 
 - 🌟 If you like this project, give it a star!
-- 🐛 Found a bug? [Open an issue](https://github.com/Kir-dev/CloudTube/issues)
+- 🐛 Found a bug? [Open an issue](https://github.com/brenli/CloudTube/issues)
 - 💡 Have an idea? [Contribute](CONTRIBUTING.md)!
 
 ## 🤝 Contributing
@@ -338,7 +338,7 @@ If you have questions or problems:
 
 1. Check the [documentation](README.md)
 2. See [installation guide](INSTALLATION.md)
-3. Open an [issue](https://github.com/Kir-dev/CloudTube/issues)
+3. Open an [issue](https://github.com/brenli/CloudTube/issues)
 
 ## 🙏 Acknowledgments
 
@@ -352,7 +352,7 @@ If you have questions or problems:
 
 **CloudTube** - Your YouTube in the Cloud
 
-Made with ❤️ by [Kir](https://github.com/Kir-dev)
+Made with ❤️ by [Kir](https://github.com/brenli)
 
 ⭐ Star this project if you find it useful!
 
