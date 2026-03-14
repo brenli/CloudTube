@@ -20,13 +20,7 @@ htmlcov/
 .idea/
 *.swp
 *.swo
-
-# Kiro
 .kiro/
-
-# Git
-.git/
-.github/
 
 # Environment
 .env
