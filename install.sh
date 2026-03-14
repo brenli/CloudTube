@@ -66,13 +66,13 @@ if [ -d "$INSTALL_DIR" ]; then
     sudo mv "$INSTALL_DIR" "$INSTALL_DIR.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
-# Clone repository (need sudo for /opt)
-echo "📥 Cloning CloudTube repository..."
-sudo git clone https://github.com/brenli/CloudTube.git "$INSTALL_DIR"
+# Create directory with proper permissions
+sudo mkdir -p "$INSTALL_DIR"
+sudo chown $USER:$USER "$INSTALL_DIR"
 
-# Set ownership to current user
-echo "🔧 Setting permissions..."
-sudo chown -R $USER:$USER "$INSTALL_DIR"
+# Clone repository
+echo "📥 Cloning CloudTube repository..."
+git clone https://github.com/brenli/CloudTube.git "$INSTALL_DIR"
 
 cd "$INSTALL_DIR"
 
@@ -118,22 +118,9 @@ else
     echo ""
 fi
 
-# Initialize database
-echo "🗄️  Initializing database..."
-python3 -c "
-import asyncio
-from bot.database import Database
-from bot.config import AppConfig
-
-async def init():
-    config = AppConfig.load_from_env()
-    db = Database(config.database_path)
-    await db.initialize()
-    await db.close()
-    print('✅ Database initialized')
-
-asyncio.run(init())
-"
+echo ""
+echo "📝 Note: Database will be initialized automatically on first run"
+echo ""
 
 # Install systemd service
 echo "🔧 Installing systemd service..."
