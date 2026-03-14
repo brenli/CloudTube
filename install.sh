@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash 
 # CloudTube Installation Script
 # Created by Kir
 # Requirements: Ubuntu 22.04/24.04
