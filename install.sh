@@ -66,11 +66,12 @@ if [ -d "$INSTALL_DIR" ]; then
     sudo mv "$INSTALL_DIR" "$INSTALL_DIR.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
-# Clone repository
+# Clone repository (need sudo for /opt)
 echo "📥 Cloning CloudTube repository..."
-git clone https://github.com/brenli/CloudTube.git "$INSTALL_DIR"
+sudo git clone https://github.com/brenli/CloudTube.git "$INSTALL_DIR"
 
-# Set ownership
+# Set ownership to current user
+echo "🔧 Setting permissions..."
 sudo chown -R $USER:$USER "$INSTALL_DIR"
 
 cd "$INSTALL_DIR"
@@ -95,13 +96,9 @@ echo ""
 
 # Create data directories
 echo "📁 Creating data directories..."
-sudo mkdir -p /var/lib/CloudTube
-sudo mkdir -p /var/log/CloudTube
-sudo mkdir -p /tmp/CloudTube
-
-sudo chown $USER:$USER /var/lib/CloudTube
-sudo chown $USER:$USER /var/log/CloudTube
-sudo chown $USER:$USER /tmp/CloudTube
+mkdir -p "$INSTALL_DIR/data"
+mkdir -p "$INSTALL_DIR/logs"
+mkdir -p "$INSTALL_DIR/temp"
 
 echo "✅ Data directories created"
 echo ""
