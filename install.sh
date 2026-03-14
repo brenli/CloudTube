@@ -66,12 +66,13 @@ if [ -d "$INSTALL_DIR" ]; then
     sudo mv "$INSTALL_DIR" "$INSTALL_DIR.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
-sudo mkdir -p "$INSTALL_DIR"
-sudo chown $USER:$USER "$INSTALL_DIR"
+# Clone repository
+echo "📥 Cloning CloudTube repository..."
+git clone https://github.com/brenli/CloudTube.git "$INSTALL_DIR"
 
-# Copy files
-echo "📋 Copying files..."
-cp -r . "$INSTALL_DIR/"
+# Set ownership
+sudo chown -R $USER:$USER "$INSTALL_DIR"
+
 cd "$INSTALL_DIR"
 
 # Create virtual environment
