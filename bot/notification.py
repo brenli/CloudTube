@@ -14,14 +14,44 @@ from bot.database import DownloadTask, NotificationSettings
 class NotificationService:
     """Service for sending notifications to the bot owner"""
     
-    def __init__(self, send_message: Callable[[str], Awaitable[None]]):
+    def __init__(self):
+        """Initialize notification service"""
+        self._bot = None
+        self._owner_id = None
+    
+    def set_bot(self, bot):
         """
-        Initialize notification service
+        Set bot application for sending messages
         
         Args:
-            send_message: Async function to send a message to the owner
+            bot: Telegram bot application
         """
-        self._send_message = send_message
+        self._bot = bot
+    
+    def set_owner_id(self, owner_id: int):
+        """
+        Set owner ID for sending messages
+        
+        Args:
+            owner_id: Telegram user ID of the owner
+        """
+        self._owner_id = owner_id
+    
+    async def _send_message(self, message: str) -> None:
+        """
+        Send message to owner
+        
+        Args:
+            message: Message text to send
+        """
+        if self._bot and self._owner_id:
+            try:
+                await self._bot.bot.send_message(
+                    chat_id=self._owner_id,
+                    text=message
+                )
+            except Exception as e:
+                print(f"Failed to send notification: {e}")
     
     async def notify_download_start(self, task: DownloadTask) -> None:
         """
