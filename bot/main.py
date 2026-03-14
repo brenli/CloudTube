@@ -7,12 +7,17 @@ Initializes all services and starts the bot.
 import asyncio
 import signal
 import sys
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from bot.config import AppConfig
+from bot.config import ConfigManager
 from bot.database import Database
 from bot.auth import AuthService
 from bot.webdav import WebDAVService
@@ -29,7 +34,7 @@ async def main():
     
     # Load configuration
     try:
-        config = AppConfig.load_from_env()
+        config = ConfigManager.load_from_env()
     except Exception as e:
         print(f"❌ Configuration error: {e}")
         sys.exit(1)
