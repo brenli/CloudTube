@@ -196,6 +196,8 @@ class WebDAVService:
 
         file_size = os.path.getsize(local_path)
         logger.info("Uploading %s (%.1f MB) → %s", local_path, file_size / 1024 / 1024, remote_path)
+        logger.info("OAuth mode: %s, Password prefix: %s", self._is_oauth, 
+                   self._config.password[:4] if self._config and self._config.password else "None")
 
         remote_dir = "/".join(remote_path.split("/")[:-1])
         if remote_dir:
@@ -206,9 +208,12 @@ class WebDAVService:
 
         if self._is_oauth:
             try:
+                logger.info("Using REST API for upload (OAuth detected)")
                 return await self._upload_via_rest_api(local_path, remote_path, file_size, progress_callback)
             except Exception as exc:
                 logger.warning("REST API upload failed (%s), falling back to WebDAV", exc)
+        else:
+            logger.info("Using WebDAV PUT for upload (Basic Auth)")
 
         return await self._upload_via_webdav(local_path, remote_path, file_size, progress_callback)
 

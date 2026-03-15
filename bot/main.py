@@ -72,13 +72,23 @@ async def main():
     resource_monitor = ResourceMonitor()
     resource_monitor.set_download_manager(download_manager)
     
+    # Load WebDAV configuration and connect
+    webdav_config = await db.get_webdav_config()
+    if webdav_config:
+        try:
+            await webdav_service.connect(webdav_config)
+            log_critical_event("WebDAV connected successfully")
+        except Exception as e:
+            log_critical_event(f"WebDAV connection failed: {e}")
+    
     # Initialize bot handler
     bot_handler = BotHandler(
         token=config.telegram_token,
         auth_service=auth_service,
         download_manager=download_manager,
         webdav_service=webdav_service,
-        notification_service=notification_service
+        notification_service=notification_service,
+        database=db
     )
     
     # Set bot for notification service

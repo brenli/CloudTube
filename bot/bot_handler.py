@@ -31,7 +31,8 @@ class CommandRouter:
         auth_service,
         download_manager,
         webdav_service,
-        notification_service
+        notification_service,
+        database
     ):
         """
         Initialize command router
@@ -41,11 +42,13 @@ class CommandRouter:
             download_manager: DownloadManager instance
             webdav_service: WebDAVService instance
             notification_service: NotificationService instance
+            database: Database instance
         """
         self.auth = auth_service
         self.download_manager = download_manager
         self.webdav = webdav_service
         self.notification = notification_service
+        self.database = database
     
     async def handle_start(self, user_id: int) -> str:
         """
@@ -259,10 +262,8 @@ class CommandRouter:
             
             if success:
                 # Save config to database
-                from bot.database import Database
-                # Note: Database instance should be passed or accessed differently
-                # This is a simplified version
-                return f"✅ Успешно подключено к {url}"
+                await self.database.save_webdav_config(config)
+                return f"✅ Успешно подключено к {url}\n💾 Конфигурация сохранена"
             else:
                 return f"❌ Не удалось подключиться к {url}\nПроверьте учетные данные"
         except Exception as e:
@@ -278,7 +279,8 @@ class BotHandler:
         auth_service,
         download_manager,
         webdav_service,
-        notification_service
+        notification_service,
+        database
     ):
         """
         Initialize bot handler
@@ -289,6 +291,7 @@ class BotHandler:
             download_manager: DownloadManager instance
             webdav_service: WebDAVService instance
             notification_service: NotificationService instance
+            database: Database instance
         """
         self.token = token
         self.auth = auth_service
@@ -296,7 +299,8 @@ class BotHandler:
             auth_service,
             download_manager,
             webdav_service,
-            notification_service
+            notification_service,
+            database
         )
         self.download_manager = download_manager
         self.application: Optional[Application] = None
