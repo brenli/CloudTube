@@ -91,7 +91,12 @@ class WebDAVService:
 
             self._client = httpx.AsyncClient(
                 auth=auth,
-                timeout=httpx.Timeout(CONNECT_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT, POOL_TIMEOUT),
+                timeout=httpx.Timeout(
+                    connect=CONNECT_TIMEOUT,
+                    read=READ_TIMEOUT,
+                    write=WRITE_TIMEOUT,
+                    pool=POOL_TIMEOUT
+                ),
                 follow_redirects=True,
             )
 
@@ -223,8 +228,15 @@ class WebDAVService:
 
         logger.info("Got REST API upload URL, starting streaming PUT (%d bytes)", file_size)
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(CONNECT_TIMEOUT, READ_TIMEOUT, WRITE_TIMEOUT, POOL_TIMEOUT),
-                                     follow_redirects=True) as upload_client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(
+                connect=CONNECT_TIMEOUT,
+                read=READ_TIMEOUT,
+                write=WRITE_TIMEOUT,
+                pool=POOL_TIMEOUT
+            ),
+            follow_redirects=True
+        ) as upload_client:
             reader = _SyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
             put_resp = await upload_client.put(upload_url, content=reader,
                                               headers={"Content-Length": str(file_size),
