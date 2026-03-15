@@ -1,7 +1,8 @@
 """
 WebDAV Service for Yandex.Disk file storage operations
 
-Uses yadisk library for OAuth token authentication only.
+Uses Yandex.Disk REST API with OAuth token authentication.
+Based on the working example with requests library.
 
 Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
 """
@@ -11,9 +12,12 @@ import os
 import logging
 from dataclasses import dataclass
 from typing import Optional, Callable
-import yadisk
+import httpx
+import aiofiles
 
 logger = logging.getLogger(__name__)
+
+YANDEX_DISK_API_BASE = "https://cloud-api.yandex.net/v1/disk"
 
 
 @dataclass
@@ -29,8 +33,9 @@ class WebDAVService:
     """Yandex.Disk service for file storage operations"""
 
     def __init__(self):
-        self._client: Optional[yadisk.AsyncClient] = None
+        self._client: Optional[httpx.AsyncClient] = None
         self._config: Optional["WebDAVConfig"] = None
+        self._headers: dict = {}
 
     async def connect(self, config: "WebDAVConfig") -> bool:
         """Connect to Yandex.Disk using OAuth token"""
@@ -40,12 +45,18 @@ class WebDAVService:
             await self.disconnect()
 
         try:
-            # Create yadisk client with OAuth token
-            self._client = yadisk.AsyncClient(token=config.password)
             self._config = config
+            # Set OAuth header exactly like in the example
+            self._headers = {"Authorization": f"OAuth {config.password}"}
             
-            # Test connection
-            is_valid = await self._client.check_token()
+            # Create HTTP client
+            self._client = httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=30.0, read=600.0, write=600.0, pool=30.0),
+                follow_redirects=True
+            )
+            
+            # Test connection by getting disk info
+            is_valid = await self.test_connection()
             
             if not is_valid:
                 await self.disconnect()
@@ -63,9 +74,10 @@ class WebDAVService:
     async def disconnect(self) -> None:
         """Disconnect from Yandex.Disk"""
         if self._client:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
         self._config = None
+        self._headers = {}
 
     async def test_connection(self) -> bool:
         """Test Yandex.Disk connection"""
@@ -73,8 +85,13 @@ class WebDAVService:
             return False
 
         try:
-            return await self._client.check_token()
-        except Exception:
+            response = await self._client.get(
+                f"{YANDEX_DISK_API_BASE}/",
+                headers=self._headers
+            )
+            return response.status_code == 200
+        except Exception as e:
+            logger.error(f"Connection test failed: {e}")
             return False
 
     async def get_storage_info(self) -> StorageInfo:
@@ -83,38 +100,77 @@ class WebDAVService:
             return StorageInfo(0, 0, 0, is_connected=False)
 
         try:
-            disk_info = await self._client.get_disk_info()
-            total = disk_info.total_space or 0
-            used = disk_info.used_space or 0
-            return StorageInfo(total, used, total - used, is_connected=True)
+            response = await self._client.get(
+                f"{YANDEX_DISK_API_BASE}/",
+                headers=self._headers
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total_space", 0)
+                used = data.get("used_space", 0)
+                return StorageInfo(total, used, total - used, is_connected=True)
+            
+            return StorageInfo(0, 0, 0, is_connected=False)
         except Exception as e:
             logger.error(f"Failed to get storage info: {e}")
             return StorageInfo(0, 0, 0, is_connected=False)
 
+    async def _get_upload_url(self, disk_path: str, overwrite: bool = True) -> str:
+        """Get upload URL from Yandex.Disk API (step 1) - exactly like in example"""
+        url = f"{YANDEX_DISK_API_BASE}/resources/upload"
+        params = {
+            "path": disk_path,
+            "overwrite": str(overwrite).lower()
+        }
+        
+        response = await self._client.get(url, headers=self._headers, params=params)
+        
+        if response.status_code != 200:
+            raise IOError(f"Failed to get upload URL: {response.status_code} {response.text}")
+        
+        return response.json()["href"]
+
     async def upload_file(self, local_path: str, remote_path: str,
                          progress_callback: Optional[Callable[[int, int], None]] = None) -> bool:
-        """Upload file to Yandex.Disk"""
+        """Upload file to Yandex.Disk - exactly like in example"""
         if self._client is None:
             raise ConnectionError("Not connected to Yandex.Disk")
+
+        if not os.path.exists(local_path):
+            raise FileNotFoundError(f"File not found: {local_path}")
 
         file_size = os.path.getsize(local_path)
         logger.info("Uploading %s (%.1f MB) → %s", local_path, file_size / 1024 / 1024, remote_path)
 
-        # Ensure remote path starts with /
-        if not remote_path.startswith("/"):
-            remote_path = "/" + remote_path
+        # Convert path to disk:/ format like in example
+        if not remote_path.startswith("disk:/"):
+            remote_path = "disk:/" + remote_path.lstrip("/")
 
-        # Create parent directories
+        # Create parent directory
         remote_dir = "/".join(remote_path.split("/")[:-1])
-        if remote_dir and remote_dir != "/":
+        if remote_dir and remote_dir != "disk:":
             try:
                 await self.create_directory(remote_dir)
             except Exception as exc:
                 logger.warning("create_directory failed: %s", exc)
 
         try:
-            # Upload file using yadisk library
-            await self._client.upload(local_path, remote_path, overwrite=True)
+            # Step 1: Get upload URL
+            upload_url = await self._get_upload_url(remote_path, overwrite=True)
+            logger.info("Got upload URL, uploading file...")
+            
+            # Step 2: Upload file to the URL - exactly like in example with files parameter
+            async with aiofiles.open(local_path, "rb") as f:
+                file_content = await f.read()
+            
+            # Use files parameter exactly like in the example: files={"file": f}
+            response = await self._client.put(upload_url, files={"file": file_content})
+            
+            logger.info("Upload response: %d", response.status_code)
+            
+            if response.status_code not in (200, 201, 202):
+                raise IOError(f"Upload failed: {response.status_code} {response.text}")
             
             if progress_callback:
                 progress_callback(file_size, file_size)
@@ -126,39 +182,35 @@ class WebDAVService:
             logger.error(f"Upload failed: {e}")
             raise IOError(f"Failed to upload file: {str(e)}")
 
-    async def create_directory(self, path: str) -> bool:
-        """Create directory on Yandex.Disk"""
+    async def create_directory(self, disk_path: str) -> bool:
+        """Create directory on Yandex.Disk - exactly like in example"""
         if self._client is None:
             raise ConnectionError("Not connected to Yandex.Disk")
 
-        # Ensure path starts with /
-        if not path.startswith("/"):
-            path = "/" + path
+        # Ensure path starts with disk:/
+        if not disk_path.startswith("disk:/"):
+            disk_path = "disk:/" + disk_path.lstrip("/")
 
         try:
-            # Check if directory already exists
-            if await self._client.exists(path):
-                return True
-
-            # Create directory recursively
-            parts = [p for p in path.split("/") if p]
-            current_path = ""
+            url = f"{YANDEX_DISK_API_BASE}/resources"
+            params = {"path": disk_path}
             
-            for part in parts:
-                current_path += "/" + part
-                try:
-                    if not await self._client.exists(current_path):
-                        await self._client.mkdir(current_path)
-                        logger.info(f"Created directory: {current_path}")
-                except yadisk.exceptions.PathExistsError:
-                    pass
-                except Exception as e:
-                    logger.warning(f"Failed to create directory {current_path}: {e}")
-
+            response = await self._client.put(url, headers=self._headers, params=params)
+            
+            if response.status_code == 409:
+                # Directory already exists - this is ok
+                logger.info(f"Directory already exists: {disk_path}")
+                return True
+            
+            if response.status_code not in (200, 201):
+                logger.warning(f"Failed to create directory {disk_path}: {response.status_code}")
+                return False
+            
+            logger.info(f"Directory created: {disk_path}")
             return True
 
         except Exception as e:
-            logger.error(f"Failed to create directory {path}: {e}")
+            logger.error(f"Failed to create directory {disk_path}: {e}")
             return False
 
     async def file_exists(self, path: str) -> bool:
@@ -166,12 +218,17 @@ class WebDAVService:
         if self._client is None:
             raise ConnectionError("Not connected to Yandex.Disk")
 
-        # Ensure path starts with /
-        if not path.startswith("/"):
-            path = "/" + path
+        # Ensure path starts with disk:/
+        if not path.startswith("disk:/"):
+            path = "disk:/" + path.lstrip("/")
 
         try:
-            return await self._client.exists(path)
+            response = await self._client.get(
+                f"{YANDEX_DISK_API_BASE}/resources",
+                headers=self._headers,
+                params={"path": path}
+            )
+            return response.status_code == 200
         except Exception:
             return False
 
