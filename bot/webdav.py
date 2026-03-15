@@ -185,7 +185,7 @@ class WebDAVService:
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> bool:
         """
-        Upload file to WebDAV storage
+        Upload file to WebDAV storage with streaming
         
         Args:
             local_path: Path to local file
@@ -200,35 +200,61 @@ class WebDAVService:
         
         try:
             import os
-            import aiofiles
+            import logging
+            
+            logger = logging.getLogger(__name__)
             
             # Get file size
             file_size = os.path.getsize(local_path)
+            logger.info(f"Uploading file: {local_path} ({file_size} bytes) to {remote_path}")
             
-            # Read file in chunks and upload
-            chunk_size = 8192  # 8KB chunks
-            bytes_uploaded = 0
+            # Create directory if needed
+            remote_dir = '/'.join(remote_path.split('/')[:-1])
+            if remote_dir:
+                logger.info(f"Creating directory: {remote_dir}")
+                await self.create_directory(remote_dir)
             
-            async with aiofiles.open(local_path, 'rb') as f:
-                # Read entire file for now (streaming upload can be added later)
-                content = await f.read()
+            # Define sync generator for httpx
+            def file_iterator():
+                chunk_size = 1024 * 1024  # 1MB chunks
+                bytes_uploaded = 0
                 
-                # Upload file
-                response = await self._http_client.put(
-                    f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}",
-                    content=content
-                )
-                
-                if response.status_code not in (200, 201, 204):
-                    return False
-                
-                # Call progress callback with final progress
-                if progress_callback:
-                    progress_callback(file_size, file_size)
-                
-                return True
+                with open(local_path, 'rb') as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        
+                        bytes_uploaded += len(chunk)
+                        logger.debug(f"Upload progress: {bytes_uploaded}/{file_size} bytes ({bytes_uploaded*100/file_size:.1f}%)")
+                        
+                        yield chunk
+            
+            # Upload file with streaming and increased timeout
+            logger.info("Starting streaming upload...")
+            response = await self._http_client.put(
+                f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}",
+                content=file_iterator(),
+                timeout=300.0  # 5 minutes timeout
+            )
+            
+            logger.info(f"Upload response status: {response.status_code}")
+            
+            if response.status_code not in (200, 201, 204):
+                logger.error(f"Upload failed with status {response.status_code}: {response.text}")
+                return False
+            
+            # Call progress callback with final progress
+            if progress_callback:
+                progress_callback(file_size, file_size)
+            
+            logger.info("Upload completed successfully")
+            return True
                 
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed to upload file: {str(e)}", exc_info=True)
             raise IOError(f"Failed to upload file: {str(e)}")
     
     async def create_directory(self, path: str) -> bool:
