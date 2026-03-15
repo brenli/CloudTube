@@ -4,8 +4,8 @@ python-telegram-bot==21.0.1
 # YouTube Download
 yt-dlp>=2024.12.23
 
-# WebDAV Client
-webdav4==0.9.8
+# Yandex.Disk API Client
+yadisk[async_files]==3.4.0
 
 # Database
 aiosqlite==0.20.0
