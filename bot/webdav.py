@@ -233,6 +233,13 @@ class WebDAVService:
             
             def _upload_with_curl():
                 """Run curl in synchronous context"""
+                # Escape special characters in URL
+                import urllib.parse
+                
+                # URL encode the remote path
+                encoded_path = urllib.parse.quote(remote_path)
+                full_url_encoded = f"{self._config.url.rstrip('/')}/{encoded_path.lstrip('/')}"
+                
                 curl_command = [
                     'curl',
                     '-X', 'PUT',
@@ -243,9 +250,11 @@ class WebDAVService:
                     '-w', '%{http_code}',  # Output HTTP status code
                     '-o', '/dev/null',  # Discard response body
                     '-s',  # Silent mode
-                    full_url
+                    '-v',  # Verbose for debugging
+                    full_url_encoded
                 ]
                 
+                logger.info(f"Curl URL: {full_url_encoded}")
                 logger.info("Running curl command")
                 
                 result = subprocess.run(
@@ -263,11 +272,12 @@ class WebDAVService:
             
             status_code = result.stdout.strip()
             logger.info(f"Curl completed with status: {status_code}")
+            logger.info(f"Curl stderr: {result.stderr[:500]}")  # Log first 500 chars of stderr
             
             if result.returncode != 0:
                 logger.error(f"Curl failed with return code: {result.returncode}")
                 logger.error(f"Stderr: {result.stderr}")
-                raise Exception(f"Curl upload failed: {result.stderr}")
+                raise Exception(f"Curl upload failed (code {result.returncode}): {result.stderr}")
             
             # Parse status code
             try:
