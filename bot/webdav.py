@@ -245,8 +245,12 @@ class WebDAVService:
         if not upload_url:
             raise IOError("No upload URL in REST API response")
 
-        logger.info("Got REST API upload URL, starting streaming PUT (%d bytes)", file_size)
+        logger.info("Got REST API upload URL, uploading file (%d bytes)", file_size)
 
+        # Upload file using simple PUT with file content
+        async with aiofiles.open(local_path, "rb") as f:
+            file_content = await f.read()
+        
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(
                 connect=CONNECT_TIMEOUT,
@@ -256,10 +260,7 @@ class WebDAVService:
             ),
             follow_redirects=True
         ) as upload_client:
-            reader = _AsyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
-            put_resp = await upload_client.put(upload_url, content=reader,
-                                              headers={"Content-Length": str(file_size),
-                                                      "Content-Type": "application/octet-stream"})
+            put_resp = await upload_client.put(upload_url, content=file_content)
 
             logger.info("REST API upload response: %d", put_resp.status_code)
 
