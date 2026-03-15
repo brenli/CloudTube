@@ -43,13 +43,18 @@
 ## Применение
 
 ```bash
-# 1. Скопируйте оба файла на сервер
-scp bot/download.py bot/webdav.py user@server:/opt/CloudTube/bot/
+# 1. Скопируйте файлы на сервер
+scp bot/download.py bot/webdav.py requirements.txt user@server:/opt/CloudTube/
 
-# 2. Перезапустите бота
+# 2. Установите новую зависимость (requests)
+cd /opt/CloudTube
+source venv/bin/activate
+pip install requests==2.31.0
+
+# 3. Перезапустите бота
 sudo systemctl restart cloudtube
 
-# 3. Проверьте логи
+# 4. Проверьте логи
 sudo journalctl -u cloudtube -f
 ```
 

@@ -236,27 +236,25 @@ class WebDAVService:
             full_url = f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}"
             logger.info(f"Upload URL: {full_url}")
             
-            # Upload file with very long timeout
-            # Yandex.Disk can be slow, especially for large files
+            # Upload file using requests (better for large files with Yandex.Disk)
             try:
-                logger.info("Sending PUT request...")
+                import requests
+                from requests.auth import HTTPBasicAuth
                 
-                # Create explicit timeout for this request
-                upload_timeout = httpx.Timeout(
-                    connect=30.0,    # 30 seconds to connect
-                    read=600.0,      # 10 minutes to read response
-                    write=600.0,     # 10 minutes to write request
-                    pool=30.0        # 30 seconds for pool operations
-                )
+                logger.info("Sending PUT request using requests library...")
                 
-                response = await self._http_client.put(
-                    full_url,
-                    content=content,
-                    timeout=upload_timeout,
-                    headers={
-                        'Content-Length': str(file_size),
-                    }
-                )
+                # Use requests for upload (better compatibility with Yandex.Disk)
+                with open(local_path, 'rb') as f:
+                    response = requests.put(
+                        full_url,
+                        data=f,
+                        auth=HTTPBasicAuth(self._config.username, self._config.password),
+                        timeout=(30, 1800),  # (connect timeout, read timeout) in seconds
+                        headers={
+                            'Content-Length': str(file_size),
+                        }
+                    )
+                
                 logger.info(f"PUT request completed, status: {response.status_code}")
                 
             except Exception as put_error:

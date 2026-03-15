@@ -29,6 +29,7 @@ black==24.3.0
 
 # HTTP Client
 httpx==0.27.0
+requests==2.31.0
 
 # Async File I/O
 aiofiles==23.2.1
