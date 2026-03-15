@@ -23,6 +23,8 @@ async def download_video(self, url: str, ...):
 
 ## Решение
 
+### 1. Асинхронное выполнение yt-dlp
+
 Все вызовы yt-dlp теперь выполняются в отдельном потоке через `asyncio.run_in_executor()`:
 
 ```python
@@ -39,52 +41,80 @@ async def download_video(self, url: str, ...):
     return filename
 ```
 
+### 2. Правильное логирование
+
+Заменены все `print()` на `logger.info()` / `logger.error()`:
+
+```python
+# ❌ НЕПРАВИЛЬНО - print() не работает в executor threads
+print(f"[DEBUG] Starting download...")
+
+# ✅ ПРАВИЛЬНО - logger работает везде
+logger.info("Starting download...")
+```
+
 ## Исправленные методы
 
 1. **DownloadService.get_video_metadata()** - извлечение метаданных видео
 2. **DownloadService.get_playlist_metadata()** - извлечение метаданных плейлиста
 3. **TaskExecutor.download_video()** - загрузка видео
+4. **TaskExecutor.execute_download()** - retry логика
+5. **TaskQueue._process_task()** - обработка задач
+6. **TaskQueue._worker()** - worker threads
 
-## Дополнительные улучшения
+## Применение исправлений
 
-Добавлено подробное логирование для диагностики:
-- Логи попыток загрузки с retry
-- Логи работы yt-dlp
-- Логи размера файлов
-- Полный traceback при ошибках
+1. **Скопируйте файл** `bot/download.py` на продакшн сервер
+2. **Перезапустите бота**:
+   ```bash
+   sudo systemctl restart cloudtube
+   ```
+3. **Проверьте логи**:
+   ```bash
+   sudo journalctl -u cloudtube -f
+   ```
 
 ## Тестирование
 
 После применения исправлений:
 
-1. Перезапустите бота на продакшн сервере
-2. Отправьте тестовое видео на загрузку
-3. Проверьте логи - должны появиться DEBUG сообщения:
+1. Отправьте тестовое видео на загрузку
+2. Проверьте логи - должны появиться сообщения:
    ```
-   [DEBUG] Starting download for task {task_id}
-   [DEBUG] Attempt 1/3 for task {task_id}
-   [DEBUG] Starting yt-dlp download for URL: ...
-   [DEBUG] Downloaded file size: ... bytes
-   [DEBUG] Download completed. Local path: ...
-   [DEBUG] Starting WebDAV upload...
-   [DEBUG] WebDAV upload completed successfully
+   INFO - Starting download for task {task_id}
+   INFO - Attempt 1/3 for task {task_id}
+   INFO - Submitting download to thread pool
+   INFO - Starting yt-dlp download for URL: ...
+   INFO - yt-dlp extraction completed
+   INFO - Downloaded file size: ... bytes
+   INFO - Thread pool execution completed: ...
+   INFO - Download successful on attempt 1
+   INFO - Download completed. Local path: ...
+   INFO - Starting WebDAV upload...
+   INFO - WebDAV upload completed successfully
    ```
 
-4. Проверьте через `/history` - статус должен быть "completed"
+3. Проверьте через `/history` - статус должен быть "completed"
+4. Проверьте WebDAV хранилище - файл должен появиться
 
-## Проверка на продакшн
+## Диагностика проблем
+
+Если загрузка все еще не работает:
 
 ```bash
-# Перезапустите бота
-sudo systemctl restart cloudtube
+# Проверьте логи с ошибками
+sudo journalctl -u cloudtube | grep ERROR
 
-# Проверьте логи
-sudo journalctl -u cloudtube -f
+# Проверьте временную папку
+ls -lh /opt/CloudTube/temp/
 
-# Или если логи в файле
-tail -f /opt/CloudTube/logs/bot.log
+# Проверьте процессы
+ps aux | grep python
+
+# Проверьте использование диска
+df -h
 ```
 
 ## Дата исправления
 
-2026-03-15
+2026-03-15 (обновлено: добавлено правильное логирование)

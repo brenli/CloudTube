@@ -12,9 +12,12 @@ import asyncio
 import os
 import tempfile
 import uuid
+import logging
 from dataclasses import dataclass
 from typing import Optional, Callable
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -270,7 +273,7 @@ class TaskExecutor:
         
         for attempt in range(self.max_retries):
             try:
-                print(f"[DEBUG] Attempt {attempt + 1}/{self.max_retries} for task {task.task_id}")
+                logger.info(f"Attempt {attempt + 1}/{self.max_retries} for task {task.task_id}")
                 
                 # Download video
                 local_path = await self.download_video(
@@ -280,23 +283,23 @@ class TaskExecutor:
                     progress_callback=progress_callback
                 )
                 
-                print(f"[DEBUG] Download successful on attempt {attempt + 1}")
+                logger.info(f"Download successful on attempt {attempt + 1}")
                 return local_path
                 
             except Exception as e:
                 last_error = e
-                print(f"[DEBUG] Attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
                 
                 # If this is not the last attempt, wait with exponential backoff
                 if attempt < self.max_retries - 1:
                     delay = self.base_delay * (2 ** attempt)
-                    print(f"[DEBUG] Waiting {delay}s before retry...")
+                    logger.info(f"Waiting {delay}s before retry...")
                     await asyncio.sleep(delay)
                     continue
         
         # All retries exhausted
         error_msg = f"Download failed after {self.max_retries} attempts: {str(last_error)}"
-        print(f"[DEBUG] {error_msg}")
+        logger.error(error_msg)
         raise Exception(error_msg)
     
     async def download_video(
@@ -365,8 +368,8 @@ class TaskExecutor:
         
         # Download video in a separate thread to avoid blocking event loop
         def _download_sync():
-            print(f"[DEBUG] Starting yt-dlp download for URL: {url}")
-            print(f"[DEBUG] Quality: {quality}, Output: {output_path}")
+            logger.info(f"Starting yt-dlp download for URL: {url}")
+            logger.info(f"Quality: {quality}, Output: {output_path}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
@@ -374,11 +377,11 @@ class TaskExecutor:
                 if info is None:
                     raise Exception(f"Failed to download video from URL: {url}")
                 
-                print(f"[DEBUG] yt-dlp extraction completed")
+                logger.info("yt-dlp extraction completed")
                 
                 # Get the actual filename
                 filename = ydl.prepare_filename(info)
-                print(f"[DEBUG] Prepared filename: {filename}")
+                logger.info(f"Prepared filename: {filename}")
                 
                 # Ensure it's MP4
                 if not filename.endswith('.mp4'):
@@ -387,21 +390,21 @@ class TaskExecutor:
                     mp4_file = f"{base}.mp4"
                     if os.path.exists(mp4_file):
                         filename = mp4_file
-                        print(f"[DEBUG] Found MP4 file: {filename}")
+                        logger.info(f"Found MP4 file: {filename}")
                 
                 if not os.path.exists(filename):
                     raise Exception(f"Downloaded file not found: {filename}")
                 
                 file_size = os.path.getsize(filename)
-                print(f"[DEBUG] Downloaded file size: {file_size} bytes")
+                logger.info(f"Downloaded file size: {file_size} bytes")
                 
                 return filename
         
         # Run in thread pool to avoid blocking
-        print(f"[DEBUG] Submitting download to thread pool")
+        logger.info("Submitting download to thread pool")
         loop = asyncio.get_event_loop()
         filename = await loop.run_in_executor(None, _download_sync)
-        print(f"[DEBUG] Thread pool execution completed: {filename}")
+        logger.info(f"Thread pool execution completed: {filename}")
         
         return filename
     
@@ -579,7 +582,7 @@ class TaskQueue:
                 break
             except Exception as e:
                 # Log error but continue processing
-                print(f"Worker {worker_id} error: {e}")
+                logger.error(f"Worker {worker_id} error: {e}", exc_info=True)
     
     async def _process_task(self, task) -> None:
         """
@@ -615,12 +618,12 @@ class TaskQueue:
                         await self._notification_service.notify_download_progress(task, progress)
             
             # Execute download
-            print(f"[DEBUG] Starting download for task {task.task_id}")
+            logger.info(f"Starting download for task {task.task_id}")
             local_path = await self._task_executor.execute_download(task, progress_callback)
-            print(f"[DEBUG] Download completed. Local path: {local_path}")
-            print(f"[DEBUG] File exists: {os.path.exists(local_path)}")
+            logger.info(f"Download completed. Local path: {local_path}")
+            logger.info(f"File exists: {os.path.exists(local_path)}")
             if os.path.exists(local_path):
-                print(f"[DEBUG] File size: {os.path.getsize(local_path)} bytes")
+                logger.info(f"File size: {os.path.getsize(local_path)} bytes")
             
             # Determine remote path based on playlist membership
             if task.playlist_id and task.playlist_name:
@@ -630,13 +633,13 @@ class TaskQueue:
                 # Single video - save in "Single Videos" folder
                 remote_path = f"Single Videos/{os.path.basename(local_path)}"
             
-            print(f"[DEBUG] Remote path: {remote_path}")
-            print(f"[DEBUG] Starting WebDAV upload...")
+            logger.info(f"Remote path: {remote_path}")
+            logger.info("Starting WebDAV upload...")
             
             # Upload to WebDAV
             await self._task_executor.webdav_service.upload_file(local_path, remote_path)
             
-            print(f"[DEBUG] WebDAV upload completed successfully")
+            logger.info("WebDAV upload completed successfully")
             
             # Update task as completed
             task.status = TaskStatus.COMPLETED
@@ -657,10 +660,10 @@ class TaskQueue:
             
         except Exception as e:
             # Update task as failed
-            print(f"[DEBUG] Task {task.task_id} failed with error: {str(e)}")
-            print(f"[DEBUG] Error type: {type(e).__name__}")
+            logger.error(f"Task {task.task_id} failed with error: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
             import traceback
-            print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             
             task.status = TaskStatus.FAILED
             task.error_message = str(e)
