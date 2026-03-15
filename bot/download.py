@@ -351,8 +351,9 @@ class TaskExecutor:
             'format': self._get_format_string(quality),
             'outtmpl': f'{output_path}.%(ext)s',
             'progress_hooks': [progress_hook],
-            'quiet': True,
-            'no_warnings': True,
+            'quiet': False,  # Enable output for debugging
+            'no_warnings': False,  # Show warnings
+            'verbose': True,  # Enable verbose logging
             # Force MP4 format
             'merge_output_format': 'mp4',
             # Use streaming to minimize memory usage
@@ -364,49 +365,72 @@ class TaskExecutor:
             'nocheckcertificate': True,
             'prefer_insecure': False,
             'age_limit': None,
+            # Add retries
+            'retries': 10,
+            'fragment_retries': 10,
+            # Add socket timeout
+            'socket_timeout': 30,
         }
         
         # Download video in a separate thread to avoid blocking event loop
         def _download_sync():
-            logger.info(f"Starting yt-dlp download for URL: {url}")
-            logger.info(f"Quality: {quality}, Output: {output_path}")
-            
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
+            try:
+                logger.info(f"Starting yt-dlp download for URL: {url}")
+                logger.info(f"Quality: {quality}, Output: {output_path}")
                 
-                if info is None:
-                    raise Exception(f"Failed to download video from URL: {url}")
-                
-                logger.info("yt-dlp extraction completed")
-                
-                # Get the actual filename
-                filename = ydl.prepare_filename(info)
-                logger.info(f"Prepared filename: {filename}")
-                
-                # Ensure it's MP4
-                if not filename.endswith('.mp4'):
-                    # yt-dlp should have merged to mp4, but check
-                    base = os.path.splitext(filename)[0]
-                    mp4_file = f"{base}.mp4"
-                    if os.path.exists(mp4_file):
-                        filename = mp4_file
-                        logger.info(f"Found MP4 file: {filename}")
-                
-                if not os.path.exists(filename):
-                    raise Exception(f"Downloaded file not found: {filename}")
-                
-                file_size = os.path.getsize(filename)
-                logger.info(f"Downloaded file size: {file_size} bytes")
-                
-                return filename
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    logger.info("Extracting video info...")
+                    info = ydl.extract_info(url, download=True)
+                    
+                    if info is None:
+                        raise Exception(f"Failed to download video from URL: {url}")
+                    
+                    logger.info("yt-dlp extraction completed")
+                    
+                    # Get the actual filename
+                    filename = ydl.prepare_filename(info)
+                    logger.info(f"Prepared filename: {filename}")
+                    
+                    # Ensure it's MP4
+                    if not filename.endswith('.mp4'):
+                        # yt-dlp should have merged to mp4, but check
+                        base = os.path.splitext(filename)[0]
+                        mp4_file = f"{base}.mp4"
+                        if os.path.exists(mp4_file):
+                            filename = mp4_file
+                            logger.info(f"Found MP4 file: {filename}")
+                    
+                    if not os.path.exists(filename):
+                        raise Exception(f"Downloaded file not found: {filename}")
+                    
+                    file_size = os.path.getsize(filename)
+                    logger.info(f"Downloaded file size: {file_size} bytes")
+                    
+                    return filename
+                    
+            except Exception as e:
+                logger.error(f"Error in _download_sync: {str(e)}", exc_info=True)
+                raise
         
-        # Run in thread pool to avoid blocking
+        # Run in thread pool to avoid blocking with timeout
         logger.info("Submitting download to thread pool")
         loop = asyncio.get_event_loop()
-        filename = await loop.run_in_executor(None, _download_sync)
-        logger.info(f"Thread pool execution completed: {filename}")
         
-        return filename
+        try:
+            # Add timeout of 30 minutes for download
+            filename = await asyncio.wait_for(
+                loop.run_in_executor(None, _download_sync),
+                timeout=1800.0  # 30 minutes
+            )
+            logger.info(f"Thread pool execution completed: {filename}")
+            return filename
+            
+        except asyncio.TimeoutError:
+            logger.error("Download timeout after 30 minutes")
+            raise Exception("Download timeout after 30 minutes")
+        except Exception as e:
+            logger.error(f"Download failed: {str(e)}", exc_info=True)
+            raise
     
     def _get_format_string(self, quality: str) -> str:
         """
