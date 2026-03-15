@@ -232,16 +232,36 @@ class WebDAVService:
             
             logger.info(f"File read complete ({len(content)} bytes), starting upload...")
             
+            # Build full URL
+            full_url = f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}"
+            logger.info(f"Upload URL: {full_url}")
+            
             # Upload file with very long timeout
             # Yandex.Disk can be slow, especially for large files
-            response = await self._http_client.put(
-                f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}",
-                content=content,
-                timeout=600.0,  # 10 minutes timeout
-                headers={
-                    'Content-Length': str(file_size),
-                }
-            )
+            try:
+                logger.info("Sending PUT request...")
+                
+                # Create explicit timeout for this request
+                upload_timeout = httpx.Timeout(
+                    connect=30.0,    # 30 seconds to connect
+                    read=600.0,      # 10 minutes to read response
+                    write=600.0,     # 10 minutes to write request
+                    pool=30.0        # 30 seconds for pool operations
+                )
+                
+                response = await self._http_client.put(
+                    full_url,
+                    content=content,
+                    timeout=upload_timeout,
+                    headers={
+                        'Content-Length': str(file_size),
+                    }
+                )
+                logger.info(f"PUT request completed, status: {response.status_code}")
+                
+            except Exception as put_error:
+                logger.error(f"PUT request failed: {str(put_error)}", exc_info=True)
+                raise
             
             logger.info(f"Upload response status: {response.status_code}")
             
