@@ -2,7 +2,7 @@
 python-telegram-bot==21.0.1
 
 # YouTube Download
-yt-dlp==2024.3.10
+yt-dlp>=2024.12.23
 
 # WebDAV Client
 webdav4==0.9.8

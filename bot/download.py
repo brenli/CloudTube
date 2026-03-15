@@ -37,6 +37,9 @@ class DownloadService:
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
+            # Add headers to bypass YouTube restrictions
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'referer': 'https://www.youtube.com/',
         }
     
     async def get_video_metadata(self, url: str) -> VideoMetadata:
@@ -320,6 +323,13 @@ class TaskExecutor:
             'merge_output_format': 'mp4',
             # Use streaming to minimize memory usage
             'http_chunk_size': 10485760,  # 10MB chunks
+            # Add headers to bypass YouTube restrictions
+            'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'referer': 'https://www.youtube.com/',
+            # Additional options to help with YouTube restrictions
+            'nocheckcertificate': True,
+            'prefer_insecure': False,
+            'age_limit': None,
         }
         
         # Download video
