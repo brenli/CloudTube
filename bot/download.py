@@ -302,7 +302,10 @@ class TaskExecutor:
             
         Requirements: 3.5, 15.2
         """
-        # Progress hook for yt-dlp
+        # Store progress updates to process asynchronously
+        progress_updates = []
+        
+        # Progress hook for yt-dlp (must be synchronous)
         def progress_hook(d):
             if progress_callback and d['status'] == 'downloading':
                 total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
@@ -310,7 +313,14 @@ class TaskExecutor:
                 
                 if total > 0:
                     progress = downloaded / total
-                    progress_callback(progress)
+                    # Schedule async callback
+                    try:
+                        loop = asyncio.get_event_loop()
+                        if loop.is_running():
+                            asyncio.create_task(progress_callback(progress))
+                    except Exception:
+                        # If we can't schedule, just skip this progress update
+                        pass
         
         # Configure yt-dlp options
         ydl_opts = {
