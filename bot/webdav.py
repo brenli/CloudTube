@@ -11,6 +11,7 @@ import re
 import os
 import logging
 import asyncio
+import ssl
 from dataclasses import dataclass
 from typing import Optional, Callable
 from urllib.parse import quote
@@ -28,35 +29,6 @@ class StorageInfo:
     used_space: int
     free_space: int
     is_connected: bool
-
-
-class _ChunkedFileReader:
-    """
-    Iterator that reads a file in chunks for streaming upload.
-    Optionally calls a progress callback.
-    """
-
-    def __init__(self, file_path: str, chunk_size: int = 8 * 1024 * 1024,
-                 progress_callback: Optional[Callable[[int, int], None]] = None):
-        self.file_path = file_path
-        self.chunk_size = chunk_size
-        self.file_size = os.path.getsize(file_path)
-        self.bytes_sent = 0
-        self.progress_callback = progress_callback
-
-    def __iter__(self):
-        with open(self.file_path, 'rb') as f:
-            while True:
-                chunk = f.read(self.chunk_size)
-                if not chunk:
-                    break
-                self.bytes_sent += len(chunk)
-                if self.progress_callback:
-                    try:
-                        self.progress_callback(self.bytes_sent, self.file_size)
-                    except Exception:
-                        pass
-                yield chunk
 
 
 def _encode_webdav_path(base_url: str, remote_path: str) -> str:
@@ -77,7 +49,7 @@ class WebDAVService:
     """WebDAV service for file storage operations"""
 
     # Upload configuration
-    UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024       # 8 MB chunks for streaming
+    UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024       # 8 MB chunks for async streaming
     UPLOAD_MAX_RETRIES = 3                      # Number of retry attempts
     UPLOAD_RETRY_DELAY = 5                      # Seconds between retries
     UPLOAD_CONNECT_TIMEOUT = 30.0               # Seconds
@@ -247,7 +219,7 @@ class WebDAVService:
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> int:
         """
-        Upload file using httpx async client with streaming.
+        Upload file using httpx async client with async streaming.
 
         Returns:
             HTTP status code from the server
@@ -264,13 +236,17 @@ class WebDAVService:
             follow_redirects=True,
         ) as upload_client:
 
-            bytes_sent = 0
+            # Create async generator for streaming upload
+            async def async_file_stream():
+                bytes_sent = 0
+                # Read file in thread pool to avoid blocking event loop
+                loop = asyncio.get_event_loop()
 
-            def file_stream():
-                nonlocal bytes_sent
                 with open(local_path, 'rb') as f:
                     while True:
-                        chunk = f.read(self.UPLOAD_CHUNK_SIZE)
+                        chunk = await loop.run_in_executor(
+                            None, f.read, self.UPLOAD_CHUNK_SIZE
+                        )
                         if not chunk:
                             break
                         bytes_sent += len(chunk)
@@ -283,7 +259,7 @@ class WebDAVService:
 
             response = await upload_client.put(
                 full_url,
-                content=file_stream(),
+                content=async_file_stream(),
                 headers={
                     'Content-Type': 'application/octet-stream',
                     'Content-Length': str(file_size),
@@ -307,55 +283,44 @@ class WebDAVService:
     ) -> int:
         """
         Upload file using requests library in a thread pool (fallback).
-        
-        The requests library handles socket-level timeouts differently and
-        can be more reliable for very large uploads to certain WebDAV servers.
+
+        Uses a plain file object so requests sends Content-Length header
+        instead of chunked transfer encoding (which Yandex.Disk rejects).
 
         Returns:
             HTTP status code from the server
         """
-        import requests
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.retry import Retry
+        import requests as req_lib
 
         def _sync_upload() -> int:
-            # Create a session with retry strategy
-            session = requests.Session()
-            retry_strategy = Retry(
-                total=0,  # We handle retries at a higher level
-                backoff_factor=0,
-            )
-            adapter = HTTPAdapter(max_retries=retry_strategy)
-            session.mount("https://", adapter)
-            session.mount("http://", adapter)
-
+            session = req_lib.Session()
             try:
-                reader = _ChunkedFileReader(
-                    local_path,
-                    chunk_size=self.UPLOAD_CHUNK_SIZE,
-                    progress_callback=progress_callback
-                )
-
-                response = session.put(
-                    full_url,
-                    data=reader,
-                    auth=(self._config.username, self._config.password),
-                    # (connect, read) — but for uploads the socket timeout
-                    # also governs write operations at the urllib3 level.
-                    # We set both very high.
-                    timeout=(self.UPLOAD_CONNECT_TIMEOUT, self.UPLOAD_WRITE_TIMEOUT),
-                    headers={
-                        'Content-Type': 'application/octet-stream',
-                        'Content-Length': str(file_size),
-                    },
-                    stream=False,
-                )
+                # Open file as a plain binary file object
+                # requests will use Content-Length (not chunked) when given a file object
+                with open(local_path, 'rb') as f:
+                    response = session.put(
+                        full_url,
+                        data=f,
+                        auth=(self._config.username, self._config.password),
+                        timeout=(self.UPLOAD_CONNECT_TIMEOUT, self.UPLOAD_WRITE_TIMEOUT),
+                        headers={
+                            'Content-Type': 'application/octet-stream',
+                            'Content-Length': str(file_size),
+                        },
+                    )
 
                 logger.info(f"requests upload response status: {response.status_code}")
                 if response.status_code not in (200, 201, 204):
                     logger.error(f"Upload failed with status {response.status_code}")
                     if response.text:
                         logger.error(f"Response body: {response.text[:500]}")
+
+                # Report final progress
+                if progress_callback:
+                    try:
+                        progress_callback(file_size, file_size)
+                    except Exception:
+                        pass
 
                 return response.status_code
 
@@ -366,6 +331,65 @@ class WebDAVService:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_upload)
 
+    async def _upload_with_curl(
+        self,
+        local_path: str,
+        full_url: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> int:
+        """
+        Upload file using curl subprocess as last-resort fallback.
+
+        curl handles SSL and large file uploads very reliably.
+
+        Returns:
+            HTTP status code (0 if curl failed to execute)
+        """
+        try:
+            cmd = [
+                'curl', '-s', '-o', '/dev/null',
+                '-w', '%{http_code}',
+                '-T', local_path,
+                '-u', f'{self._config.username}:{self._config.password}',
+                '--connect-timeout', str(int(self.UPLOAD_CONNECT_TIMEOUT)),
+                '--max-time', str(int(self.UPLOAD_WRITE_TIMEOUT)),
+                full_url
+            ]
+
+            logger.info("Starting curl upload...")
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await process.communicate()
+
+            if process.returncode != 0:
+                logger.error(f"curl failed with return code {process.returncode}")
+                if stderr:
+                    logger.error(f"curl stderr: {stderr.decode(errors='replace')[:500]}")
+                return 0
+
+            status_code = int(stdout.decode().strip())
+            logger.info(f"curl upload response status: {status_code}")
+
+            if status_code in (200, 201, 204) and progress_callback:
+                try:
+                    progress_callback(file_size, file_size)
+                except Exception:
+                    pass
+
+            return status_code
+
+        except FileNotFoundError:
+            logger.warning("curl not found on system, skipping curl fallback")
+            return 0
+        except Exception as e:
+            logger.error(f"curl upload failed: {e}")
+            return 0
+
     async def upload_file(
         self,
         local_path: str,
@@ -375,8 +399,12 @@ class WebDAVService:
         """
         Upload file to WebDAV storage with retry logic.
 
-        Uses httpx async client first, falls back to requests library
-        if httpx fails. Retries up to UPLOAD_MAX_RETRIES times.
+        Tries multiple upload methods in order:
+        1. httpx async streaming
+        2. requests with file object (in thread pool)
+        3. curl subprocess
+
+        Retries up to UPLOAD_MAX_RETRIES times.
 
         Args:
             local_path: Path to local file
@@ -415,46 +443,38 @@ class WebDAVService:
 
         last_error: Optional[Exception] = None
 
+        # Define upload methods to try in order
+        upload_methods = [
+            ("httpx", self._upload_with_httpx),
+            ("requests", self._upload_with_requests),
+            ("curl", self._upload_with_curl),
+        ]
+
         for attempt in range(1, self.UPLOAD_MAX_RETRIES + 1):
             logger.info(f"Upload attempt {attempt}/{self.UPLOAD_MAX_RETRIES}")
 
-            # --- Attempt 1: httpx async ---
-            try:
-                logger.info("Trying upload with httpx (async streaming)...")
-                status = await self._upload_with_httpx(
-                    local_path, full_url, file_size, progress_callback
-                )
-                if status in (200, 201, 204):
-                    if progress_callback:
-                        progress_callback(file_size, file_size)
-                    logger.info("Upload completed successfully via httpx")
-                    return True
-                else:
-                    last_error = IOError(f"Server returned status {status}")
-                    logger.warning(f"httpx upload returned status {status}")
+            for method_name, method_func in upload_methods:
+                try:
+                    logger.info(f"Trying upload with {method_name}...")
+                    status = await method_func(
+                        local_path, full_url, file_size, progress_callback
+                    )
+                    if status in (200, 201, 204):
+                        if progress_callback:
+                            try:
+                                progress_callback(file_size, file_size)
+                            except Exception:
+                                pass
+                        logger.info(f"Upload completed successfully via {method_name}")
+                        return True
+                    else:
+                        msg = f"{method_name} upload returned status {status}"
+                        last_error = IOError(msg)
+                        logger.warning(msg)
 
-            except Exception as e:
-                last_error = e
-                logger.warning(f"httpx upload failed: {e}")
-
-            # --- Attempt 2: requests fallback (in thread pool) ---
-            try:
-                logger.info("Trying upload with requests (threaded fallback)...")
-                status = await self._upload_with_requests(
-                    local_path, full_url, file_size, progress_callback
-                )
-                if status in (200, 201, 204):
-                    if progress_callback:
-                        progress_callback(file_size, file_size)
-                    logger.info("Upload completed successfully via requests")
-                    return True
-                else:
-                    last_error = IOError(f"Server returned status {status}")
-                    logger.warning(f"requests upload returned status {status}")
-
-            except Exception as e:
-                last_error = e
-                logger.warning(f"requests upload failed: {e}")
+                except Exception as e:
+                    last_error = e
+                    logger.warning(f"{method_name} upload failed: {e}")
 
             # Wait before retrying (except on last attempt)
             if attempt < self.UPLOAD_MAX_RETRIES:
@@ -496,7 +516,6 @@ class WebDAVService:
                     encoded_url = _encode_webdav_path(self._config.url, current_path)
                     response = await self._http_client.request("MKCOL", encoded_url)
                     if response.status_code not in (200, 201, 405):
-                        # 405 = already exists on some servers
                         logger.warning(
                             f"MKCOL {current_path} returned {response.status_code}"
                         )
