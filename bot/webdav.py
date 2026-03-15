@@ -1,8 +1,8 @@
 """
-Yandex.Disk Service for file storage operations
+WebDAV Service for Yandex.Disk file storage operations
 
-Provides Yandex.Disk REST API client functionality for uploading files, managing directories,
-and checking storage information. Uses REST API instead of WebDAV to avoid throttling.
+Provides WebDAV client functionality for uploading files to Yandex.Disk.
+Supports both Basic Auth (username:password) and OAuth token authentication.
 
 Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
 """
@@ -10,7 +10,7 @@ Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
 import re
 from dataclasses import dataclass
 from typing import Optional, Callable
-import yadisk
+import httpx
 import asyncio
 
 
@@ -24,19 +24,24 @@ class StorageInfo:
 
 
 class WebDAVService:
-    """Yandex.Disk service for file storage operations via REST API"""
+    """WebDAV service for Yandex.Disk file storage operations"""
     
     def __init__(self):
-        """Initialize Yandex.Disk service"""
-        self._client: Optional[yadisk.AsyncClient] = None
+        """Initialize WebDAV service"""
+        self._client: Optional[httpx.AsyncClient] = None
         self._config: Optional['WebDAVConfig'] = None
+        self._auth_header: Optional[dict] = None
     
     async def connect(self, config: 'WebDAVConfig') -> bool:
         """
-        Connect to Yandex.Disk storage via REST API
+        Connect to Yandex.Disk WebDAV storage
+        
+        Supports two authentication methods:
+        1. Basic Auth: username + password
+        2. OAuth Token: username + OAuth token (password field contains token)
         
         Args:
-            config: WebDAV configuration (password field contains OAuth token)
+            config: WebDAV configuration
             
         Returns:
             True if connection successful, False otherwise
@@ -48,9 +53,32 @@ class WebDAVService:
             await self.disconnect()
         
         try:
-            # Create Yandex.Disk client with OAuth token
-            # Note: config.password should contain OAuth token for Yandex.Disk
-            self._client = yadisk.AsyncClient(token=config.password)
+            # Determine authentication method
+            # If password starts with "y0_" or "t1.", it's an OAuth token
+            is_oauth = config.password.startswith(('y0_', 't1.', 'AQAA'))
+            
+            if is_oauth:
+                # OAuth token authentication
+                self._auth_header = {
+                    'Authorization': f'OAuth {config.password}'
+                }
+                auth = None  # Don't use Basic Auth
+            else:
+                # Basic authentication
+                self._auth_header = {}
+                auth = (config.username, config.password)
+            
+            # Create HTTP client
+            self._client = httpx.AsyncClient(
+                auth=auth,
+                timeout=httpx.Timeout(
+                    connect=30.0,
+                    read=300.0,
+                    write=300.0,
+                    pool=30.0
+                ),
+                follow_redirects=True
+            )
             
             # Store config
             self._config = config
@@ -67,19 +95,21 @@ class WebDAVService:
         except Exception as e:
             self._client = None
             self._config = None
-            raise ConnectionError(f"Failed to connect to Yandex.Disk: {str(e)}")
+            self._auth_header = None
+            raise ConnectionError(f"Failed to connect to Yandex.Disk WebDAV: {str(e)}")
     
     async def disconnect(self) -> None:
-        """Disconnect from Yandex.Disk storage"""
+        """Disconnect from Yandex.Disk WebDAV storage"""
         if self._client:
-            await self._client.close()
+            await self._client.aclose()
             self._client = None
         
         self._config = None
+        self._auth_header = None
     
     async def test_connection(self) -> bool:
         """
-        Test Yandex.Disk connection
+        Test Yandex.Disk WebDAV connection
         
         Returns:
             True if connection is working, False otherwise
@@ -88,14 +118,19 @@ class WebDAVService:
             return False
         
         try:
-            # Try to check token
-            return await self._client.check_token()
+            # Try to list root directory using PROPFIND
+            response = await self._client.request(
+                "PROPFIND",
+                self._config.url,
+                headers={**self._auth_header, "Depth": "0"}
+            )
+            return response.status_code in (200, 207)  # 207 Multi-Status is valid for WebDAV
         except Exception:
             return False
 
     async def get_storage_info(self) -> StorageInfo:
         """
-        Get storage information from Yandex.Disk
+        Get storage information from Yandex.Disk WebDAV
         
         Returns:
             Storage information including space usage
@@ -109,12 +144,40 @@ class WebDAVService:
             )
         
         try:
-            # Get disk info from Yandex.Disk API
-            disk_info = await self._client.get_disk_info()
+            # Send PROPFIND request to get quota information
+            response = await self._client.request(
+                "PROPFIND",
+                self._config.url,
+                headers={**self._auth_header, "Depth": "0"},
+                content="""<?xml version="1.0" encoding="utf-8" ?>
+                <D:propfind xmlns:D="DAV:">
+                    <D:prop>
+                        <D:quota-available-bytes/>
+                        <D:quota-used-bytes/>
+                    </D:prop>
+                </D:propfind>"""
+            )
             
-            total_space = disk_info.total_space or 0
-            used_space = disk_info.used_space or 0
-            free_space = total_space - used_space
+            if response.status_code not in (200, 207):
+                return StorageInfo(
+                    total_space=0,
+                    used_space=0,
+                    free_space=0,
+                    is_connected=True
+                )
+            
+            # Parse XML response
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.text)
+            
+            namespaces = {'D': 'DAV:'}
+            
+            quota_available = root.find('.//D:quota-available-bytes', namespaces)
+            quota_used = root.find('.//D:quota-used-bytes', namespaces)
+            
+            free_space = int(quota_available.text) if quota_available is not None and quota_available.text else 0
+            used_space = int(quota_used.text) if quota_used is not None and quota_used.text else 0
+            total_space = free_space + used_space
             
             return StorageInfo(
                 total_space=total_space,
@@ -124,7 +187,6 @@ class WebDAVService:
             )
             
         except Exception:
-            # If we can't get disk info, return connected status with unknown space
             return StorageInfo(
                 total_space=0,
                 used_space=0,
@@ -138,22 +200,27 @@ class WebDAVService:
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> bool:
         """
-        Upload file to Yandex.Disk storage using REST API
+        Upload file to Yandex.Disk WebDAV storage using curl
+        
+        Uses curl in subprocess to avoid Python socket timeout issues
+        and WebDAV throttling problems.
         
         Args:
             local_path: Path to local file
-            remote_path: Remote path on Yandex.Disk (e.g., "Single Videos/video.mp4")
-            progress_callback: Optional callback for progress updates (bytes_uploaded, total_bytes)
+            remote_path: Remote path on Yandex.Disk
+            progress_callback: Optional callback for progress updates
             
         Returns:
             True if upload successful, False otherwise
         """
         if self._client is None:
-            raise ConnectionError("Not connected to Yandex.Disk")
+            raise ConnectionError("Not connected to Yandex.Disk WebDAV")
         
         try:
             import os
             import logging
+            import subprocess
+            import urllib.parse
             
             logger = logging.getLogger(__name__)
             
@@ -161,31 +228,98 @@ class WebDAVService:
             file_size = os.path.getsize(local_path)
             logger.info(f"Uploading file: {local_path} ({file_size} bytes / {file_size/1024/1024:.1f} MB) to {remote_path}")
             
-            # Ensure remote path starts with /
-            if not remote_path.startswith('/'):
-                remote_path = '/' + remote_path
-            
             # Create directory if needed
             remote_dir = '/'.join(remote_path.split('/')[:-1])
-            if remote_dir and remote_dir != '/':
+            if remote_dir:
                 logger.info(f"Creating directory: {remote_dir}")
                 try:
                     await self.create_directory(remote_dir)
                 except Exception as e:
                     logger.warning(f"Failed to create directory (may already exist): {e}")
             
-            logger.info(f"Starting upload to: {remote_path}")
+            # Build full URL with proper encoding
+            encoded_path = urllib.parse.quote(remote_path)
+            full_url = f"{self._config.url.rstrip('/')}/{encoded_path.lstrip('/')}"
+            logger.info(f"Upload URL: {full_url}")
             
-            # Upload file using Yandex.Disk REST API
-            # This bypasses WebDAV throttling issues
-            await self._client.upload(local_path, remote_path, overwrite=True)
+            # Upload using curl in subprocess
+            logger.info("Starting curl upload...")
             
-            logger.info("Upload completed successfully")
+            def _upload_with_curl():
+                """Run curl in synchronous context"""
+                # Determine if using OAuth or Basic Auth
+                is_oauth = self._config.password.startswith(('y0_', 't1.', 'AQAA'))
+                
+                if is_oauth:
+                    # OAuth authentication
+                    curl_command = [
+                        'curl',
+                        '-X', 'PUT',
+                        '-H', f'Authorization: OAuth {self._config.password}',
+                        '--data-binary', f'@{local_path}',
+                        '--max-time', '7200',  # 2 hours
+                        '--connect-timeout', '30',
+                        '-w', '%{http_code}',
+                        '-o', '/dev/null',
+                        '-s',
+                        full_url
+                    ]
+                else:
+                    # Basic authentication
+                    curl_command = [
+                        'curl',
+                        '-X', 'PUT',
+                        '-u', f'{self._config.username}:{self._config.password}',
+                        '--data-binary', f'@{local_path}',
+                        '--max-time', '7200',
+                        '--connect-timeout', '30',
+                        '-w', '%{http_code}',
+                        '-o', '/dev/null',
+                        '-s',
+                        full_url
+                    ]
+                
+                logger.info("Running curl command")
+                
+                result = subprocess.run(
+                    curl_command,
+                    capture_output=True,
+                    text=True,
+                    timeout=7200
+                )
+                
+                return result
             
-            # Call progress callback with final progress
+            # Run curl in thread pool
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(None, _upload_with_curl)
+            
+            status_code = result.stdout.strip()
+            logger.info(f"Curl completed with status: {status_code}")
+            
+            if result.returncode != 0:
+                logger.error(f"Curl failed with return code: {result.returncode}")
+                logger.error(f"Stderr: {result.stderr}")
+                raise Exception(f"Curl upload failed (code {result.returncode}): {result.stderr}")
+            
+            # Parse status code
+            try:
+                http_status = int(status_code)
+            except ValueError:
+                logger.error(f"Invalid HTTP status code: {status_code}")
+                raise Exception(f"Invalid HTTP status code: {status_code}")
+            
+            logger.info(f"Upload response status: {http_status}")
+            
+            if http_status not in (200, 201, 204):
+                logger.error(f"Upload failed with status {http_status}")
+                return False
+            
+            # Call progress callback
             if progress_callback:
                 progress_callback(file_size, file_size)
             
+            logger.info("Upload completed successfully")
             return True
                 
         except Exception as e:
@@ -196,7 +330,7 @@ class WebDAVService:
     
     async def create_directory(self, path: str) -> bool:
         """
-        Create directory on Yandex.Disk storage
+        Create directory on Yandex.Disk WebDAV storage
         
         Args:
             path: Directory path to create
@@ -205,30 +339,28 @@ class WebDAVService:
             True if directory created or already exists, False otherwise
         """
         if self._client is None:
-            raise ConnectionError("Not connected to Yandex.Disk")
+            raise ConnectionError("Not connected to Yandex.Disk WebDAV")
         
         try:
-            # Ensure path starts with /
-            if not path.startswith('/'):
-                path = '/' + path
-            
             # Check if directory already exists
             if await self.file_exists(path):
                 return True
             
-            # Create directory
-            await self._client.mkdir(path)
-            return True
+            # Create directory using MKCOL method
+            response = await self._client.request(
+                "MKCOL",
+                f"{self._config.url.rstrip('/')}/{path.lstrip('/')}",
+                headers=self._auth_header
+            )
             
-        except yadisk.exceptions.PathExistsError:
-            # Directory already exists
-            return True
+            return response.status_code in (200, 201)
+            
         except Exception:
             return False
     
     async def file_exists(self, path: str) -> bool:
         """
-        Check if file or directory exists on Yandex.Disk storage
+        Check if file or directory exists on Yandex.Disk WebDAV storage
         
         Args:
             path: Path to check
@@ -237,15 +369,16 @@ class WebDAVService:
             True if file/directory exists, False otherwise
         """
         if self._client is None:
-            raise ConnectionError("Not connected to Yandex.Disk")
+            raise ConnectionError("Not connected to Yandex.Disk WebDAV")
         
         try:
-            # Ensure path starts with /
-            if not path.startswith('/'):
-                path = '/' + path
+            # Use HEAD request to check existence
+            response = await self._client.head(
+                f"{self._config.url.rstrip('/')}/{path.lstrip('/')}",
+                headers=self._auth_header
+            )
             
-            # Check if path exists
-            return await self._client.exists(path)
+            return response.status_code == 200
             
         except Exception:
             return False
