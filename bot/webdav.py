@@ -58,8 +58,15 @@ class WebDAVService:
         try:
             self._config = config
 
-            # Create mount point if doesn't exist
-            os.makedirs(MOUNT_POINT, exist_ok=True)
+            # Create mount point with sudo if doesn't exist
+            if not os.path.exists(MOUNT_POINT):
+                logger.info(f"Creating mount point {MOUNT_POINT}")
+                process = await asyncio.create_subprocess_shell(
+                    f"sudo mkdir -p {MOUNT_POINT}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await process.communicate()
 
             # Setup davfs2 configuration
             await self._setup_davfs2()
@@ -139,8 +146,8 @@ delay_upload 0
                 logger.info("WebDAV already mounted")
                 return True
 
-            # Mount command
-            cmd = f"mount.davfs {self._config.url} {MOUNT_POINT}"
+            # Mount command with sudo
+            cmd = f"sudo mount.davfs {self._config.url} {MOUNT_POINT}"
 
             logger.info(f"Mounting WebDAV: {cmd}")
 
@@ -195,8 +202,8 @@ delay_upload 0
         try:
             logger.info(f"Unmounting WebDAV from {MOUNT_POINT}")
 
-            # Unmount command
-            cmd = f"umount {MOUNT_POINT}"
+            # Unmount command with sudo
+            cmd = f"sudo umount {MOUNT_POINT}"
 
             process = await asyncio.create_subprocess_shell(
                 cmd,
@@ -209,7 +216,7 @@ delay_upload 0
             if process.returncode != 0:
                 # Try force unmount
                 logger.warning("Normal unmount failed, trying force unmount")
-                cmd = f"umount -l {MOUNT_POINT}"
+                cmd = f"sudo umount -l {MOUNT_POINT}"
                 process = await asyncio.create_subprocess_shell(
                     cmd,
                     stdout=asyncio.subprocess.PIPE,
