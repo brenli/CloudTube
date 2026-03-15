@@ -49,11 +49,20 @@ class WebDAVService:
             await self.disconnect()
         
         try:
-            # Create HTTP client with basic auth
+            # Create HTTP client with basic auth and long timeout for large files
             self._http_client = httpx.AsyncClient(
                 auth=(config.username, config.password),
-                timeout=30.0,
-                follow_redirects=True
+                timeout=httpx.Timeout(
+                    connect=30.0,    # 30 seconds to connect
+                    read=600.0,      # 10 minutes to read response
+                    write=600.0,     # 10 minutes to write request
+                    pool=30.0        # 30 seconds for pool operations
+                ),
+                follow_redirects=True,
+                limits=httpx.Limits(
+                    max_connections=10,
+                    max_keepalive_connections=5
+                )
             )
             
             # Create WebDAV client
@@ -177,7 +186,6 @@ class WebDAVService:
                 free_space=0,
                 is_connected=await self.test_connection()
             )
-    
     async def upload_file(
         self,
         local_path: str,
@@ -185,7 +193,7 @@ class WebDAVService:
         progress_callback: Optional[Callable[[int, int], None]] = None
     ) -> bool:
         """
-        Upload file to WebDAV storage with streaming
+        Upload file to WebDAV storage
         
         Args:
             local_path: Path to local file
@@ -206,42 +214,41 @@ class WebDAVService:
             
             # Get file size
             file_size = os.path.getsize(local_path)
-            logger.info(f"Uploading file: {local_path} ({file_size} bytes) to {remote_path}")
+            logger.info(f"Uploading file: {local_path} ({file_size} bytes / {file_size/1024/1024:.1f} MB) to {remote_path}")
             
             # Create directory if needed
             remote_dir = '/'.join(remote_path.split('/')[:-1])
             if remote_dir:
                 logger.info(f"Creating directory: {remote_dir}")
-                await self.create_directory(remote_dir)
+                try:
+                    await self.create_directory(remote_dir)
+                except Exception as e:
+                    logger.warning(f"Failed to create directory (may already exist): {e}")
             
-            # Define sync generator for httpx
-            def file_iterator():
-                chunk_size = 1024 * 1024  # 1MB chunks
-                bytes_uploaded = 0
-                
-                with open(local_path, 'rb') as f:
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
-                        
-                        bytes_uploaded += len(chunk)
-                        logger.debug(f"Upload progress: {bytes_uploaded}/{file_size} bytes ({bytes_uploaded*100/file_size:.1f}%)")
-                        
-                        yield chunk
+            # Read file into memory (Yandex.Disk doesn't support streaming PUT properly)
+            logger.info("Reading file into memory...")
+            with open(local_path, 'rb') as f:
+                content = f.read()
             
-            # Upload file with streaming and increased timeout
-            logger.info("Starting streaming upload...")
+            logger.info(f"File read complete ({len(content)} bytes), starting upload...")
+            
+            # Upload file with very long timeout
+            # Yandex.Disk can be slow, especially for large files
             response = await self._http_client.put(
                 f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}",
-                content=file_iterator(),
-                timeout=300.0  # 5 minutes timeout
+                content=content,
+                timeout=600.0,  # 10 minutes timeout
+                headers={
+                    'Content-Length': str(file_size),
+                }
             )
             
             logger.info(f"Upload response status: {response.status_code}")
             
             if response.status_code not in (200, 201, 204):
-                logger.error(f"Upload failed with status {response.status_code}: {response.text}")
+                logger.error(f"Upload failed with status {response.status_code}")
+                if response.text:
+                    logger.error(f"Response body: {response.text[:500]}")
                 return False
             
             # Call progress callback with final progress
