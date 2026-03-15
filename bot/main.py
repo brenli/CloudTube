@@ -154,9 +154,6 @@ async def shutdown(bot_handler, download_manager, resource_monitor, db):
     await db.close()
     
     log_critical_event("Shutdown complete")
-    
-    # Exit
-    sys.exit(0)
 
 
 if __name__ == "__main__":
