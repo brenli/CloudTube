@@ -58,71 +58,77 @@ class DownloadService:
         Requirements: 3.1, 3.2
         """
         try:
-            with yt_dlp.YoutubeDL(self._ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                if info is None:
-                    raise ValueError(f"Could not extract video information from URL: {url}")
-                
-                # Extract video ID
-                video_id = info.get('id', '')
-                if not video_id:
-                    raise ValueError(f"Could not extract video ID from URL: {url}")
-                
-                # Extract title
-                title = info.get('title', 'Unknown')
-                
-                # Extract duration
-                duration = info.get('duration', 0)
-                
-                # Extract available formats and qualities
-                formats = info.get('formats', [])
-                
-                # Build quality map with estimated sizes
-                quality_map = {}
-                available_qualities = []
-                
-                # Define quality priorities (best to worst)
-                quality_priorities = ['best', '1080p', '720p', '480p', '360p']
-                
-                # Group formats by quality
-                for fmt in formats:
-                    # Skip audio-only formats
-                    if fmt.get('vcodec') == 'none':
-                        continue
+            # Run yt-dlp in thread pool to avoid blocking event loop
+            def _extract_metadata():
+                with yt_dlp.YoutubeDL(self._ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
                     
-                    height = fmt.get('height')
-                    filesize = fmt.get('filesize') or fmt.get('filesize_approx', 0)
+                    if info is None:
+                        raise ValueError(f"Could not extract video information from URL: {url}")
                     
-                    if height:
-                        quality = f"{height}p"
+                    # Extract video ID
+                    video_id = info.get('id', '')
+                    if not video_id:
+                        raise ValueError(f"Could not extract video ID from URL: {url}")
+                    
+                    # Extract title
+                    title = info.get('title', 'Unknown')
+                    
+                    # Extract duration
+                    duration = info.get('duration', 0)
+                    
+                    # Extract available formats and qualities
+                    formats = info.get('formats', [])
+                    
+                    # Build quality map with estimated sizes
+                    quality_map = {}
+                    available_qualities = []
+                    
+                    # Define quality priorities (best to worst)
+                    quality_priorities = ['best', '1080p', '720p', '480p', '360p']
+                    
+                    # Group formats by quality
+                    for fmt in formats:
+                        # Skip audio-only formats
+                        if fmt.get('vcodec') == 'none':
+                            continue
                         
-                        # Keep the largest filesize for each quality
-                        if quality not in quality_map or filesize > quality_map[quality]:
-                            quality_map[quality] = filesize
-                
-                # Add 'best' quality (use the highest resolution available)
-                if quality_map:
-                    best_size = max(quality_map.values())
-                    quality_map['best'] = best_size
-                
-                # Build available qualities list in priority order
-                for quality in quality_priorities:
-                    if quality == 'best' or quality in quality_map:
-                        available_qualities.append(quality)
-                
-                # If no qualities found, add a default
-                if not available_qualities:
-                    available_qualities = ['best']
-                    quality_map['best'] = info.get('filesize', 0) or info.get('filesize_approx', 0)
-                
-                return VideoMetadata(
-                    video_id=video_id,
-                    title=title,
-                    duration=duration,
-                    available_qualities=available_qualities,
-                    estimated_sizes=quality_map
-                )
+                        height = fmt.get('height')
+                        filesize = fmt.get('filesize') or fmt.get('filesize_approx', 0)
+                        
+                        if height:
+                            quality = f"{height}p"
+                            
+                            # Keep the largest filesize for each quality
+                            if quality not in quality_map or filesize > quality_map[quality]:
+                                quality_map[quality] = filesize
+                    
+                    # Add 'best' quality (use the highest resolution available)
+                    if quality_map:
+                        best_size = max(quality_map.values())
+                        quality_map['best'] = best_size
+                    
+                    # Build available qualities list in priority order
+                    for quality in quality_priorities:
+                        if quality == 'best' or quality in quality_map:
+                            available_qualities.append(quality)
+                    
+                    # If no qualities found, add a default
+                    if not available_qualities:
+                        available_qualities = ['best']
+                        quality_map['best'] = info.get('filesize', 0) or info.get('filesize_approx', 0)
+                    
+                    return VideoMetadata(
+                        video_id=video_id,
+                        title=title,
+                        duration=duration,
+                        available_qualities=available_qualities,
+                        estimated_sizes=quality_map
+                    )
+            
+            # Run in thread pool
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _extract_metadata)
                 
         except yt_dlp.utils.DownloadError as e:
             raise ValueError(f"Failed to extract video metadata: {str(e)}")
@@ -151,48 +157,56 @@ class DownloadService:
                 'extract_flat': 'in_playlist',  # Extract basic info for playlist items
             }
             
-            with yt_dlp.YoutubeDL(playlist_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-                
-                if info is None:
-                    raise ValueError(f"Could not extract playlist information from URL: {url}")
-                
-                # Check if this is a playlist
-                if 'entries' not in info:
-                    raise ValueError(f"URL does not appear to be a playlist: {url}")
-                
-                entries = info.get('entries', [])
-                
-                if not entries:
-                    raise ValueError(f"Playlist is empty: {url}")
-                
-                # Extract metadata for each video
-                metadata_list = []
-                
-                for entry in entries:
-                    # Skip unavailable videos
-                    if entry is None:
-                        continue
+            # Run yt-dlp in thread pool to avoid blocking
+            def _extract_playlist():
+                with yt_dlp.YoutubeDL(playlist_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
                     
-                    # Get video URL
-                    video_id = entry.get('id')
-                    if not video_id:
-                        continue
+                    if info is None:
+                        raise ValueError(f"Could not extract playlist information from URL: {url}")
                     
-                    video_url = f"https://www.youtube.com/watch?v={video_id}"
+                    # Check if this is a playlist
+                    if 'entries' not in info:
+                        raise ValueError(f"URL does not appear to be a playlist: {url}")
                     
-                    try:
-                        # Extract full metadata for each video
-                        video_metadata = await self.get_video_metadata(video_url)
-                        metadata_list.append(video_metadata)
-                    except ValueError:
-                        # Skip videos that fail to extract
-                        continue
+                    entries = info.get('entries', [])
+                    
+                    if not entries:
+                        raise ValueError(f"Playlist is empty: {url}")
+                    
+                    return entries
+            
+            # Run in thread pool
+            loop = asyncio.get_event_loop()
+            entries = await loop.run_in_executor(None, _extract_playlist)
+            
+            # Extract metadata for each video
+            metadata_list = []
+            
+            for entry in entries:
+                # Skip unavailable videos
+                if entry is None:
+                    continue
                 
-                if not metadata_list:
-                    raise ValueError(f"No valid videos found in playlist: {url}")
+                # Get video URL
+                video_id = entry.get('id')
+                if not video_id:
+                    continue
                 
-                return metadata_list
+                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                
+                try:
+                    # Extract full metadata for each video
+                    video_metadata = await self.get_video_metadata(video_url)
+                    metadata_list.append(video_metadata)
+                except ValueError:
+                    # Skip videos that fail to extract
+                    continue
+            
+            if not metadata_list:
+                raise ValueError(f"No valid videos found in playlist: {url}")
+            
+            return metadata_list
                 
         except yt_dlp.utils.DownloadError as e:
             raise ValueError(f"Failed to extract playlist metadata: {str(e)}")
@@ -256,6 +270,8 @@ class TaskExecutor:
         
         for attempt in range(self.max_retries):
             try:
+                print(f"[DEBUG] Attempt {attempt + 1}/{self.max_retries} for task {task.task_id}")
+                
                 # Download video
                 local_path = await self.download_video(
                     url=task.url,
@@ -264,19 +280,24 @@ class TaskExecutor:
                     progress_callback=progress_callback
                 )
                 
+                print(f"[DEBUG] Download successful on attempt {attempt + 1}")
                 return local_path
                 
             except Exception as e:
                 last_error = e
+                print(f"[DEBUG] Attempt {attempt + 1} failed: {str(e)}")
                 
                 # If this is not the last attempt, wait with exponential backoff
                 if attempt < self.max_retries - 1:
                     delay = self.base_delay * (2 ** attempt)
+                    print(f"[DEBUG] Waiting {delay}s before retry...")
                     await asyncio.sleep(delay)
                     continue
         
         # All retries exhausted
-        raise Exception(f"Download failed after {self.max_retries} attempts: {str(last_error)}")
+        error_msg = f"Download failed after {self.max_retries} attempts: {str(last_error)}"
+        print(f"[DEBUG] {error_msg}")
+        raise Exception(error_msg)
     
     async def download_video(
         self,
@@ -342,25 +363,47 @@ class TaskExecutor:
             'age_limit': None,
         }
         
-        # Download video
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+        # Download video in a separate thread to avoid blocking event loop
+        def _download_sync():
+            print(f"[DEBUG] Starting yt-dlp download for URL: {url}")
+            print(f"[DEBUG] Quality: {quality}, Output: {output_path}")
             
-            if info is None:
-                raise Exception(f"Failed to download video from URL: {url}")
-            
-            # Get the actual filename
-            filename = ydl.prepare_filename(info)
-            
-            # Ensure it's MP4
-            if not filename.endswith('.mp4'):
-                # yt-dlp should have merged to mp4, but check
-                base = os.path.splitext(filename)[0]
-                mp4_file = f"{base}.mp4"
-                if os.path.exists(mp4_file):
-                    filename = mp4_file
-            
-            return filename
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                
+                if info is None:
+                    raise Exception(f"Failed to download video from URL: {url}")
+                
+                print(f"[DEBUG] yt-dlp extraction completed")
+                
+                # Get the actual filename
+                filename = ydl.prepare_filename(info)
+                print(f"[DEBUG] Prepared filename: {filename}")
+                
+                # Ensure it's MP4
+                if not filename.endswith('.mp4'):
+                    # yt-dlp should have merged to mp4, but check
+                    base = os.path.splitext(filename)[0]
+                    mp4_file = f"{base}.mp4"
+                    if os.path.exists(mp4_file):
+                        filename = mp4_file
+                        print(f"[DEBUG] Found MP4 file: {filename}")
+                
+                if not os.path.exists(filename):
+                    raise Exception(f"Downloaded file not found: {filename}")
+                
+                file_size = os.path.getsize(filename)
+                print(f"[DEBUG] Downloaded file size: {file_size} bytes")
+                
+                return filename
+        
+        # Run in thread pool to avoid blocking
+        print(f"[DEBUG] Submitting download to thread pool")
+        loop = asyncio.get_event_loop()
+        filename = await loop.run_in_executor(None, _download_sync)
+        print(f"[DEBUG] Thread pool execution completed: {filename}")
+        
+        return filename
     
     def _get_format_string(self, quality: str) -> str:
         """
@@ -572,7 +615,12 @@ class TaskQueue:
                         await self._notification_service.notify_download_progress(task, progress)
             
             # Execute download
+            print(f"[DEBUG] Starting download for task {task.task_id}")
             local_path = await self._task_executor.execute_download(task, progress_callback)
+            print(f"[DEBUG] Download completed. Local path: {local_path}")
+            print(f"[DEBUG] File exists: {os.path.exists(local_path)}")
+            if os.path.exists(local_path):
+                print(f"[DEBUG] File size: {os.path.getsize(local_path)} bytes")
             
             # Determine remote path based on playlist membership
             if task.playlist_id and task.playlist_name:
@@ -582,8 +630,13 @@ class TaskQueue:
                 # Single video - save in "Single Videos" folder
                 remote_path = f"Single Videos/{os.path.basename(local_path)}"
             
+            print(f"[DEBUG] Remote path: {remote_path}")
+            print(f"[DEBUG] Starting WebDAV upload...")
+            
             # Upload to WebDAV
             await self._task_executor.webdav_service.upload_file(local_path, remote_path)
+            
+            print(f"[DEBUG] WebDAV upload completed successfully")
             
             # Update task as completed
             task.status = TaskStatus.COMPLETED
@@ -604,6 +657,11 @@ class TaskQueue:
             
         except Exception as e:
             # Update task as failed
+            print(f"[DEBUG] Task {task.task_id} failed with error: {str(e)}")
+            print(f"[DEBUG] Error type: {type(e).__name__}")
+            import traceback
+            print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+            
             task.status = TaskStatus.FAILED
             task.error_message = str(e)
             task.updated_at = datetime.now(timezone.utc)
