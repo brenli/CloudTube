@@ -248,13 +248,20 @@ class CommandRouter:
             return """
 ❌ Неверный формат команды
 
-Использование: /connect <url> <username> <password>
-Пример: /connect https://webdav.example.com user pass123
+Использование: /connect <url> <username> <password_or_token>
+
+Для БЫСТРОЙ загрузки используйте OAuth токен (начинается с y0_, y1_, y2_, y3_)
+Для медленной загрузки можно использовать app password
+
+Пример: /connect https://webdav.yandex.ru user@yandex.ru y0_xxxxx
 """
         
         from bot.database import WebDAVConfig
         
         config = WebDAVConfig(url=url, username=username, password=password)
+        
+        # Check if OAuth token
+        is_oauth = password.startswith(("y0_", "y1_", "y2_", "y3_", "t1.", "AQAA"))
         
         try:
             # Test connection
@@ -263,7 +270,11 @@ class CommandRouter:
             if success:
                 # Save config to database
                 await self.database.save_webdav_config(config)
-                return f"✅ Успешно подключено к {url}\n💾 Конфигурация сохранена"
+                
+                if is_oauth:
+                    return f"✅ Успешно подключено к {url}\n💾 Конфигурация сохранена\n🚀 OAuth токен обнаружен - загрузка будет БЫСТРОЙ через REST API"
+                else:
+                    return f"✅ Успешно подключено к {url}\n💾 Конфигурация сохранена\n⚠️ App password обнаружен - загрузка будет МЕДЛЕННОЙ через WebDAV\n\nДля быстрой загрузки получите OAuth токен: python get_yandex_token.py"
             else:
                 return f"❌ Не удалось подключиться к {url}\nПроверьте учетные данные"
         except Exception as e:

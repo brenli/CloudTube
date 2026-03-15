@@ -88,14 +88,17 @@ class WebDAVService:
             await self.disconnect()
 
         try:
-            self._is_oauth = config.password.startswith(("y0_", "t1.", "AQAA"))
+            # Check if password is OAuth token (y0_, y1_, y2_, y3_, t1., AQAA)
+            self._is_oauth = config.password.startswith(("y0_", "y1_", "y2_", "y3_", "t1.", "AQAA"))
 
             if self._is_oauth:
                 self._auth_header = {"Authorization": f"OAuth {config.password}"}
                 auth = None
+                logger.info("Detected OAuth token, will use REST API for uploads")
             else:
                 self._auth_header = {}
                 auth = (config.username, config.password)
+                logger.info("Detected app password, will use WebDAV for uploads")
 
             self._client = httpx.AsyncClient(
                 auth=auth,
@@ -118,6 +121,9 @@ class WebDAVService:
 
         except Exception as e:
             self._client = None
+            self._config = None
+            self._auth_header = None
+            raise ConnectionError(f"Failed to connect to Yandex.Disk WebDAV: {e}")
             self._config = None
             self._auth_header = None
             raise ConnectionError(f"Failed to connect to Yandex.Disk WebDAV: {e}")
