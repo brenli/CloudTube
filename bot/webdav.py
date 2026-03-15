@@ -1,4 +1,3 @@
-"""
 WebDAV Service for Yandex.Disk file storage operations
 
 Provides WebDAV client functionality for uploading files to Yandex.Disk.
@@ -17,6 +16,7 @@ from dataclasses import dataclass
 from typing import Optional, Callable
 import httpx
 import asyncio
+import aiofiles
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +37,13 @@ class StorageInfo:
     is_connected: bool
 
 
-class _SyncProgressReader:
-    """Synchronous iterator for streaming upload with progress tracking"""
+class _AsyncProgressReader:
+    """Asynchronous iterator for streaming upload with progress tracking.
     
+    httpx.AsyncClient requires an async iterable for streaming content.
+    Using a sync iterator causes RuntimeError.
+    """
+
     def __init__(self, file_path: str, total_size: int, chunk_size: int = UPLOAD_CHUNK_SIZE,
                  progress_callback: Optional[Callable[[int, int], None]] = None):
         self._file_path = file_path
@@ -48,10 +52,13 @@ class _SyncProgressReader:
         self._progress_callback = progress_callback
         self._bytes_sent = 0
 
-    def __iter__(self):
-        with open(self._file_path, "rb") as f:
+    def __aiter__(self):
+        return self._stream()
+
+    async def _stream(self):
+        async with aiofiles.open(self._file_path, "rb") as f:
             while True:
-                chunk = f.read(self._chunk_size)
+                chunk = await f.read(self._chunk_size)
                 if not chunk:
                     break
                 self._bytes_sent += len(chunk)
@@ -237,7 +244,7 @@ class WebDAVService:
             ),
             follow_redirects=True
         ) as upload_client:
-            reader = _SyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
+            reader = _AsyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
             put_resp = await upload_client.put(upload_url, content=reader,
                                               headers={"Content-Length": str(file_size),
                                                       "Content-Type": "application/octet-stream"})
@@ -273,7 +280,7 @@ class WebDAVService:
 
         logger.info("WebDAV streaming PUT to %s (%d bytes)", full_url, file_size)
 
-        reader = _SyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
+        reader = _AsyncProgressReader(local_path, file_size, UPLOAD_CHUNK_SIZE, progress_callback)
         resp = await self._client.put(full_url, content=reader,
                                       headers={**self._auth_header, "Content-Length": str(file_size),
                                               "Content-Type": "application/octet-stream"})
