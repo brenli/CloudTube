@@ -1,8 +1,7 @@
 """
 WebDAV Service for Yandex.Disk file storage operations
 
-Provides Yandex.Disk client functionality for uploading files.
-Uses yadisk library for REST API access.
+Uses yadisk library for OAuth token authentication only.
 
 Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
 """
@@ -34,31 +33,31 @@ class WebDAVService:
         self._config: Optional["WebDAVConfig"] = None
 
     async def connect(self, config: "WebDAVConfig") -> bool:
-        """Connect to Yandex.Disk"""
+        """Connect to Yandex.Disk using OAuth token"""
         from bot.database import WebDAVConfig
 
         if self._client is not None:
             await self.disconnect()
 
         try:
-            # Create yadisk client with token
+            # Create yadisk client with OAuth token
             self._client = yadisk.AsyncClient(token=config.password)
             self._config = config
             
             # Test connection
-            connection_ok = await self.test_connection()
-
-            if not connection_ok:
+            is_valid = await self._client.check_token()
+            
+            if not is_valid:
                 await self.disconnect()
+                logger.error("Invalid OAuth token")
                 return False
 
             logger.info("Connected to Yandex.Disk successfully")
             return True
 
         except Exception as e:
-            self._client = None
-            self._config = None
-            logger.error(f"Failed to connect to Yandex.Disk: {e}")
+            await self.disconnect()
+            logger.error(f"Failed to connect: {e}")
             raise ConnectionError(f"Failed to connect to Yandex.Disk: {e}")
 
     async def disconnect(self) -> None:
@@ -74,11 +73,8 @@ class WebDAVService:
             return False
 
         try:
-            # Check if token is valid
-            is_valid = await self._client.check_token()
-            return is_valid
-        except Exception as e:
-            logger.error(f"Connection test failed: {e}")
+            return await self._client.check_token()
+        except Exception:
             return False
 
     async def get_storage_info(self) -> StorageInfo:
@@ -108,7 +104,7 @@ class WebDAVService:
         if not remote_path.startswith("/"):
             remote_path = "/" + remote_path
 
-        # Create parent directories if needed
+        # Create parent directories
         remote_dir = "/".join(remote_path.split("/")[:-1])
         if remote_dir and remote_dir != "/":
             try:
@@ -141,7 +137,7 @@ class WebDAVService:
 
         try:
             # Check if directory already exists
-            if await self.file_exists(path):
+            if await self._client.exists(path):
                 return True
 
             # Create directory recursively
@@ -151,11 +147,10 @@ class WebDAVService:
             for part in parts:
                 current_path += "/" + part
                 try:
-                    if not await self.file_exists(current_path):
+                    if not await self._client.exists(current_path):
                         await self._client.mkdir(current_path)
                         logger.info(f"Created directory: {current_path}")
                 except yadisk.exceptions.PathExistsError:
-                    # Directory already exists, continue
                     pass
                 except Exception as e:
                     logger.warning(f"Failed to create directory {current_path}: {e}")
@@ -177,8 +172,7 @@ class WebDAVService:
 
         try:
             return await self._client.exists(path)
-        except Exception as e:
-            logger.error(f"Failed to check if file exists {path}: {e}")
+        except Exception:
             return False
 
     def sanitize_filename(self, filename: str) -> str:

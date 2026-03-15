@@ -250,27 +250,12 @@ class CommandRouter:
 
 Использование: /connect <url> <email> <oauth_token>
 
-OAuth токен должен начинаться с y0_, y1_, y2_ или y3_
-Получите токен: python get_yandex_token.py
+OAuth токен получите командой: python get_yandex_token.py
 
 Пример: /connect https://webdav.yandex.ru user@yandex.ru y0_xxxxx
 """
         
         from bot.database import WebDAVConfig
-        
-        # Check if OAuth token
-        is_oauth = password.startswith(("y0_", "y1_", "y2_", "y3_", "t1.", "AQAA"))
-        
-        if not is_oauth:
-            return """
-❌ Неверный формат токена
-
-Токен должен начинаться с y0_, y1_, y2_ или y3_
-Это OAuth токен, а не обычный пароль.
-
-Получите OAuth токен командой:
-python get_yandex_token.py
-"""
         
         config = WebDAVConfig(url=url, username=username, password=password)
         
@@ -281,9 +266,9 @@ python get_yandex_token.py
             if success:
                 # Save config to database
                 await self.database.save_webdav_config(config)
-                return f"✅ Успешно подключено к Yandex.Disk\n💾 Конфигурация сохранена\n🚀 Загрузка будет быстрой через REST API"
+                return f"✅ Успешно подключено к Yandex.Disk\n💾 Конфигурация сохранена"
             else:
-                return f"❌ Не удалось подключиться\nПроверьте токен (возможно истек срок действия)"
+                return f"❌ Не удалось подключиться\nПроверьте OAuth токен"
         except Exception as e:
             return f"❌ Ошибка подключения: {str(e)}"
 
