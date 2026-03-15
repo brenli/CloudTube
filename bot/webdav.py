@@ -236,37 +236,68 @@ class WebDAVService:
             full_url = f"{self._config.url.rstrip('/')}/{remote_path.lstrip('/')}"
             logger.info(f"Upload URL: {full_url}")
             
-            # Upload file using requests (better for large files with Yandex.Disk)
+            # Upload file using curl (most reliable for Yandex.Disk)
             try:
-                import requests
-                from requests.auth import HTTPBasicAuth
+                import subprocess
                 
-                logger.info("Sending PUT request using requests library...")
+                logger.info("Uploading using curl...")
                 
-                # Use requests for upload (better compatibility with Yandex.Disk)
-                with open(local_path, 'rb') as f:
-                    response = requests.put(
-                        full_url,
-                        data=f,
-                        auth=HTTPBasicAuth(self._config.username, self._config.password),
-                        timeout=(30, 1800),  # (connect timeout, read timeout) in seconds
-                        headers={
-                            'Content-Length': str(file_size),
-                        }
-                    )
+                # Use curl for upload - it handles large files better
+                curl_command = [
+                    'curl',
+                    '-X', 'PUT',
+                    '-u', f'{self._config.username}:{self._config.password}',
+                    '--data-binary', f'@{local_path}',
+                    '--max-time', '3600',  # 1 hour timeout
+                    '--connect-timeout', '30',
+                    '-w', '%{http_code}',  # Output HTTP status code
+                    '-o', '/dev/null',  # Discard response body
+                    '-s',  # Silent mode
+                    full_url
+                ]
                 
-                logger.info(f"PUT request completed, status: {response.status_code}")
+                logger.info(f"Running curl command (credentials hidden)")
                 
+                # Run curl
+                result = subprocess.run(
+                    curl_command,
+                    capture_output=True,
+                    text=True,
+                    timeout=3600  # 1 hour
+                )
+                
+                status_code = result.stdout.strip()
+                logger.info(f"Curl completed with status: {status_code}")
+                
+                if result.returncode != 0:
+                    logger.error(f"Curl failed with return code: {result.returncode}")
+                    logger.error(f"Stderr: {result.stderr}")
+                    raise Exception(f"Curl upload failed: {result.stderr}")
+                
+                # Parse status code
+                try:
+                    http_status = int(status_code)
+                except ValueError:
+                    logger.error(f"Invalid HTTP status code: {status_code}")
+                    raise Exception(f"Invalid HTTP status code: {status_code}")
+                
+                logger.info(f"Upload response status: {http_status}")
+                
+                if http_status not in (200, 201, 204):
+                    logger.error(f"Upload failed with status {http_status}")
+                    return False
+                
+            except subprocess.TimeoutExpired:
+                logger.error("Curl upload timeout after 1 hour")
+                raise Exception("Upload timeout after 1 hour")
             except Exception as put_error:
-                logger.error(f"PUT request failed: {str(put_error)}", exc_info=True)
+                logger.error(f"Upload failed: {str(put_error)}", exc_info=True)
                 raise
             
-            logger.info(f"Upload response status: {response.status_code}")
+            logger.info(f"Upload response status: {http_status}")
             
-            if response.status_code not in (200, 201, 204):
-                logger.error(f"Upload failed with status {response.status_code}")
-                if response.text:
-                    logger.error(f"Response body: {response.text[:500]}")
+            if http_status not in (200, 201, 204):
+                logger.error(f"Upload failed with status {http_status}")
                 return False
             
             # Call progress callback with final progress

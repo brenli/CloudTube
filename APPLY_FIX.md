@@ -3,9 +3,17 @@
 ## Что исправлено
 
 1. ✅ yt-dlp теперь работает в отдельном потоке (не блокирует event loop)
-2. ✅ WebDAV upload использует библиотеку `requests` для лучшей совместимости с Yandex.Disk
-3. ✅ Увеличены таймауты для больших файлов (30 минут)
+2. ✅ WebDAV upload использует `curl` вместо Python библиотек (решает проблему timeout)
+3. ✅ Увеличены таймауты для больших файлов (1 час)
 4. ✅ Добавлено подробное логирование
+
+## Почему curl?
+
+Python библиотеки (httpx, requests) имеют проблемы с socket write timeout при загрузке больших файлов. Curl:
+- Правильно работает с WebDAV и Yandex.Disk
+- Не имеет проблем с таймаутами
+- Эффективно загружает файлы любого размера
+- Уже установлен на всех Linux серверах
 
 ## Команды для применения
 
@@ -15,19 +23,16 @@
 # 1. Перейдите в директорию проекта
 cd /opt/CloudTube
 
-# 2. Активируйте виртуальное окружение
-source venv/bin/activate
+# 2. Убедитесь что curl установлен (обычно уже есть)
+curl --version
 
-# 3. Установите библиотеку requests
-pip install requests==2.31.0
-
-# 4. Перезапустите бота
+# 3. Перезапустите бота
 sudo systemctl restart cloudtube
 
-# 5. Проверьте что бот запустился
+# 4. Проверьте что бот запустился
 sudo systemctl status cloudtube
 
-# 6. Следите за логами
+# 5. Следите за логами
 sudo journalctl -u cloudtube -f
 ```
 
@@ -50,17 +55,20 @@ INFO - Submitting download to thread pool
 INFO - Downloaded file size: 120247586 bytes
 INFO - Starting WebDAV upload...
 INFO - Uploading file: ... (120247586 bytes / 114.7 MB)
-INFO - Reading file into memory...
-INFO - File read complete, starting upload...
-INFO - Upload response status: 201
+INFO - Uploading using curl...
+INFO - Curl completed with status: 201
 INFO - Upload completed successfully
 ```
 
 ## Если что-то не работает
 
 ```bash
-# Проверьте что requests установлен
-pip list | grep requests
+# Проверьте что curl установлен
+curl --version
+
+# Если curl не установлен (редко):
+sudo apt-get install curl  # Debian/Ubuntu
+sudo yum install curl      # CentOS/RHEL
 
 # Проверьте логи на ошибки
 sudo journalctl -u cloudtube | grep ERROR

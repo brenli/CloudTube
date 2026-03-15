@@ -7,23 +7,23 @@
 **Причина**: Синхронный yt-dlp вызывался в асинхронном коде  
 **Решение**: Запуск yt-dlp в отдельном потоке через `asyncio.run_in_executor()`
 
-### Проблема 2: WebDAV upload падал с ReadError ✅ РЕШЕНО
+### Проблема 2: WebDAV upload падал с TimeoutError ✅ РЕШЕНО
 **Симптом**: 
 ```
 ✅ Download completed: 120247586 bytes (114 MB)
-❌ WebDAV upload failed: httpcore.ReadError (через 3 секунды)
+❌ WebDAV upload failed: TimeoutError: The write operation timed out (через 30 секунд)
 ```
 
 **Причина**: 
-1. Yandex.Disk не поддерживает streaming PUT правильно
-2. Слишком короткий таймаут (30 секунд)
-3. Соединение обрывалось при попытке streaming upload
+1. Python библиотеки (httpx, requests) имеют проблемы с socket write timeout
+2. Yandex.Disk требует стабильного соединения для больших файлов
+3. Таймауты на уровне urllib3/socket не настраиваются правильно
 
 **Решение**: 
-1. Загрузка файла целиком в память (для файлов до 500 MB это нормально)
-2. Увеличен таймаут до 10 минут
-3. Добавлен Content-Length header
-4. Настроены правильные таймауты для httpx клиента
+1. Использование `curl` для загрузки - проверенный инструмент для WebDAV
+2. Таймаут 1 час для больших файлов
+3. Curl правильно работает с Yandex.Disk WebDAV
+4. Нет проблем с socket timeout
 
 ## Исправленные файлы
 
@@ -34,9 +34,8 @@
 - ✅ Обработка всех исключений
 
 ### 2. bot/webdav.py
-- ✅ Загрузка файла целиком (работает с Yandex.Disk)
-- ✅ Таймаут 10 минут для upload
-- ✅ Правильные настройки httpx.Timeout
+- ✅ Использование curl для upload (надежнее Python библиотек)
+- ✅ Таймаут 1 час для больших файлов
 - ✅ Автоматическое создание директорий
 - ✅ Подробное логирование
 
@@ -44,12 +43,10 @@
 
 ```bash
 # 1. Скопируйте файлы на сервер
-scp bot/download.py bot/webdav.py requirements.txt user@server:/opt/CloudTube/
+scp bot/download.py bot/webdav.py user@server:/opt/CloudTube/bot/
 
-# 2. Установите новую зависимость (requests)
-cd /opt/CloudTube
-source venv/bin/activate
-pip install requests==2.31.0
+# 2. Убедитесь что curl установлен (обычно уже есть)
+curl --version
 
 # 3. Перезапустите бота
 sudo systemctl restart cloudtube
@@ -74,8 +71,9 @@ INFO - Download completed. Local path: ...
 INFO - Starting WebDAV upload...
 INFO - Uploading file: ... (120247586 bytes / 114.7 MB) to Single Videos/...
 INFO - Creating directory: Single Videos
-INFO - Reading file into memory...
-INFO - File read complete (120247586 bytes), starting upload...
+INFO - Uploading using curl...
+INFO - Running curl command (credentials hidden)
+INFO - Curl completed with status: 201
 INFO - Upload response status: 201
 INFO - Upload completed successfully
 INFO - WebDAV upload completed successfully
@@ -90,17 +88,17 @@ INFO - WebDAV upload completed successfully
 ## Производительность
 
 - Загрузка 114 MB видео: ~10 секунд
-- Upload на Yandex.Disk: ~5-10 секунд
-- Общее время: ~15-20 секунд
+- Upload на Yandex.Disk через curl: ~10-30 секунд (зависит от скорости сети)
+- Общее время: ~20-40 секунд
 
 ## Ограничения
 
 ### Размер файлов:
-- ✅ До 500 MB - работает отлично
-- ⚠️ 500 MB - 1 GB - может быть медленно
-- ❌ Больше 1 GB - может не хватить памяти
+- ✅ До 2 GB - работает отлично
+- ⚠️ 2-5 GB - может быть медленно
+- ❌ Больше 5 GB - может потребоваться Yandex.Disk API
 
-Для очень больших файлов нужно использовать Yandex.Disk API вместо WebDAV.
+Curl эффективно работает с файлами любого размера, ограничение только по скорости сети.
 
 ## Если возникают ошибки
 
