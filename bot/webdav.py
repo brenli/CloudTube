@@ -1,3 +1,4 @@
+"""
 WebDAV Service for Yandex.Disk file storage operations
 
 Provides WebDAV client functionality for uploading files to Yandex.Disk.
