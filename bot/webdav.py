@@ -8,6 +8,7 @@ Requirements: 2.1, 2.2, 2.3, 2.5, 2.6, 9.2, 11.3, 11.4
 
 import re
 import os
+import pwd
 import shutil
 import asyncio
 import logging
@@ -70,16 +71,18 @@ class WebDAVService:
                 await process.communicate()
                 
                 # Set owner to current user
-                username = os.getenv('USER') or os.getenv('USERNAME')
-                if username:
-                    logger.info(f"Setting owner of {MOUNT_POINT} to {username}")
-                    process = await asyncio.create_subprocess_shell(
-                        f"sudo chown {username}:{username} {MOUNT_POINT}",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    await process.communicate()
-                    logger.info(f"Mount point owner set successfully")
+                uid = os.getuid()
+                user_info = pwd.getpwuid(uid)
+                username = user_info.pw_name
+                
+                logger.info(f"Setting owner of {MOUNT_POINT} to {username}")
+                process = await asyncio.create_subprocess_shell(
+                    f"sudo chown {username}:{username} {MOUNT_POINT}",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                await process.communicate()
+                logger.info(f"Mount point owner set successfully")
 
             # Setup davfs2 configuration
             await self._setup_davfs2()
@@ -114,15 +117,14 @@ class WebDAVService:
     async def _setup_davfs2(self) -> None:
         """Setup davfs2 configuration"""
         try:
-            # Get home directory - use HOME env var or fallback to /root
-            home_dir = os.environ.get('HOME')
-            if not home_dir:
-                # Try to get from USER env var
-                user = os.environ.get('USER', 'root')
-                if user == 'root':
-                    home_dir = '/root'
-                else:
-                    home_dir = f'/home/{user}'
+            # Get home directory of the user running the process
+            # Get current process user ID
+            uid = os.getuid()
+            user_info = pwd.getpwuid(uid)
+            home_dir = user_info.pw_dir
+            
+            logger.info(f"Running as user: {user_info.pw_name} (uid={uid})")
+            logger.info(f"User home directory: {home_dir}")
             
             davfs2_dir = os.path.join(home_dir, '.davfs2')
             logger.info(f"Using davfs2 directory: {davfs2_dir}")
@@ -178,13 +180,11 @@ delay_upload 0
                 logger.info("WebDAV already mounted")
                 return True
 
-            # Get current user and group
-            import pwd
-            import grp
-            username = os.getenv('USER') or os.getenv('USERNAME')
-            user_info = pwd.getpwnam(username)
-            uid = user_info.pw_uid
+            # Get current user and group from process UID
+            uid = os.getuid()
+            user_info = pwd.getpwuid(uid)
             gid = user_info.pw_gid
+            username = user_info.pw_name
             
             logger.info(f"Mounting as user: {username} (uid={uid}, gid={gid})")
 
