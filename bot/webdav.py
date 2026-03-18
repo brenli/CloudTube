@@ -78,18 +78,7 @@ class WebDAVService:
                 logger.error(error_msg)
                 raise IOError(error_msg)
             
-            # Check write permissions
-            if not os.access(MOUNT_POINT, os.W_OK):
-                error_msg = (
-                    f"No write permission on {MOUNT_POINT}. "
-                    f"Please fix permissions:\n"
-                    f"  sudo chown {username}:{gid} {MOUNT_POINT}\n"
-                    f"  sudo chmod 755 {MOUNT_POINT}"
-                )
-                logger.error(error_msg)
-                raise IOError(error_msg)
-            
-            logger.info(f"Mount point {MOUNT_POINT} is ready")
+            logger.info(f"Mount point {MOUNT_POINT} exists")
 
             # Setup davfs2 configuration
             await self._setup_davfs2()
@@ -107,12 +96,24 @@ class WebDAVService:
             self._is_mounted = True
             logger.info(f"WebDAV mounted successfully at {MOUNT_POINT}")
 
-            # Test connection
+            # Test connection and write permissions after mount
             connection_ok = await self.test_connection()
 
             if not connection_ok:
                 await self.disconnect()
                 return False
+            
+            # Check write permissions after mount
+            if not os.access(MOUNT_POINT, os.W_OK):
+                logger.warning(f"No write permission on mounted {MOUNT_POINT}")
+                await self.disconnect()
+                error_msg = (
+                    f"No write permission on mounted {MOUNT_POINT}. "
+                    f"Check mount options and davfs2 configuration."
+                )
+                raise IOError(error_msg)
+            
+            logger.info(f"Write permissions verified on {MOUNT_POINT}")
 
             return True
 
