@@ -47,6 +47,18 @@ else
 fi
 echo ""
 
+# Check davfs2 (for WebDAV mounting)
+echo "Checking davfs2..."
+if command -v mount.davfs &> /dev/null; then
+    echo -e "${GREEN}✓${NC} davfs2 is installed"
+else
+    echo -e "${YELLOW}WARNING: davfs2 is not installed${NC}"
+    echo "davfs2 is required for Yandex.Disk WebDAV mounting"
+    echo "Install it with: sudo apt install davfs2 (Ubuntu/Debian)"
+    echo ""
+fi
+echo ""
+
 # Create virtual environment
 echo "Creating virtual environment..."
 if [ -d "venv" ]; then

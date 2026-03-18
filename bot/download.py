@@ -652,7 +652,9 @@ class TaskQueue:
             # Determine remote path based on playlist membership
             if task.playlist_id and task.playlist_name:
                 # Part of a playlist - organize in playlist folder
-                remote_path = f"{task.playlist_name}/{os.path.basename(local_path)}"
+                # Sanitize playlist name for filesystem
+                safe_playlist_name = self._task_executor.webdav_service.sanitize_filename(task.playlist_name)
+                remote_path = f"{safe_playlist_name}/{os.path.basename(local_path)}"
             else:
                 # Single video - save in "Single Videos" folder
                 remote_path = f"Single Videos/{os.path.basename(local_path)}"
@@ -660,8 +662,21 @@ class TaskQueue:
             logger.info(f"Remote path: {remote_path}")
             logger.info("Starting WebDAV upload...")
             
-            # Upload to WebDAV
-            await self._task_executor.webdav_service.upload_file(local_path, remote_path)
+            # Upload to WebDAV with progress tracking
+            async def upload_progress_callback(bytes_uploaded: int, total_bytes: int):
+                # Update progress (download is 0-90%, upload is 90-100%)
+                upload_progress = bytes_uploaded / total_bytes if total_bytes > 0 else 0
+                overall_progress = 0.9 + (upload_progress * 0.1)
+                
+                # Update task progress
+                task.progress = overall_progress
+                await self._database.update_task(task)
+            
+            await self._task_executor.webdav_service.upload_file(
+                local_path, 
+                remote_path,
+                progress_callback=upload_progress_callback
+            )
             
             logger.info("WebDAV upload completed successfully")
             

@@ -146,8 +146,18 @@ delay_upload 0
                 logger.info("WebDAV already mounted")
                 return True
 
-            # Mount command with sudo
-            cmd = f"sudo mount.davfs {self._config.url} {MOUNT_POINT}"
+            # Get current user and group
+            import pwd
+            import grp
+            username = os.getenv('USER') or os.getenv('USERNAME')
+            user_info = pwd.getpwnam(username)
+            uid = user_info.pw_uid
+            gid = user_info.pw_gid
+            
+            logger.info(f"Mounting as user: {username} (uid={uid}, gid={gid})")
+
+            # Mount command with sudo and uid/gid options
+            cmd = f"sudo mount -t davfs {self._config.url} {MOUNT_POINT} -o uid={uid},gid={gid}"
 
             logger.info(f"Mounting WebDAV: {cmd}")
 
@@ -155,10 +165,16 @@ delay_upload 0
             process = await asyncio.create_subprocess_shell(
                 cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE
             )
 
-            stdout, stderr = await process.communicate()
+            # Send empty line for any prompts (credentials should be in secrets file)
+            stdout, stderr = await process.communicate(input=b'\n\n')
+
+            logger.info(f"Mount stdout: {stdout.decode()}")
+            logger.info(f"Mount stderr: {stderr.decode()}")
+            logger.info(f"Mount return code: {process.returncode}")
 
             if process.returncode != 0:
                 error_msg = stderr.decode() if stderr else "Unknown error"
@@ -171,10 +187,13 @@ delay_upload 0
             await asyncio.sleep(2)
 
             # Verify mount
-            return await self._is_mounted_check()
+            is_mounted = await self._is_mounted_check()
+            logger.info(f"Mount verification: {is_mounted}")
+            
+            return is_mounted
 
         except Exception as e:
-            logger.error(f"Failed to mount WebDAV: {e}")
+            logger.error(f"Failed to mount WebDAV: {e}", exc_info=True)
             return False
 
     async def _is_mounted_check(self) -> bool:
@@ -323,13 +342,37 @@ delay_upload 0
                 logger.info(f"Creating directory: {dest_dir}")
                 os.makedirs(dest_dir, exist_ok=True)
 
-            # Copy file
+            # Copy file with progress tracking for large files
             logger.info(f"Copying file to {dest_path}")
-            shutil.copy2(local_path, dest_path)
-
-            # Call progress callback with final progress
-            if progress_callback:
-                progress_callback(file_size, file_size)
+            
+            if file_size > 10 * 1024 * 1024 and progress_callback:  # > 10MB
+                # Copy in chunks with progress
+                chunk_size = 1024 * 1024  # 1MB chunks
+                bytes_copied = 0
+                
+                with open(local_path, 'rb') as src:
+                    with open(dest_path, 'wb') as dst:
+                        while True:
+                            chunk = src.read(chunk_size)
+                            if not chunk:
+                                break
+                            dst.write(chunk)
+                            bytes_copied += len(chunk)
+                            
+                            # Call progress callback
+                            if progress_callback:
+                                await progress_callback(bytes_copied, file_size)
+                            
+                            # Small delay to avoid blocking
+                            if bytes_copied % (10 * 1024 * 1024) == 0:  # Every 10MB
+                                await asyncio.sleep(0.01)
+            else:
+                # Small file, copy directly
+                shutil.copy2(local_path, dest_path)
+                
+                # Call progress callback with final progress
+                if progress_callback:
+                    await progress_callback(file_size, file_size)
 
             logger.info("Upload completed successfully")
             return True

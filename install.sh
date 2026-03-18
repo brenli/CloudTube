@@ -52,9 +52,34 @@ sudo apt install -y \
     python3-pip \
     ffmpeg \
     sqlite3 \
-    git
+    git \
+    davfs2
 
 echo "✅ System dependencies installed"
+echo ""
+
+# Configure davfs2
+echo "🔧 Configuring davfs2..."
+# Create .davfs2 directory for user
+mkdir -p ~/.davfs2
+if [ ! -f ~/.davfs2/davfs2.conf ]; then
+    cat > ~/.davfs2/davfs2.conf << 'EOF'
+# davfs2 configuration
+use_locks 0
+cache_size 50
+delay_upload 0
+EOF
+    echo "✅ davfs2 configuration created"
+fi
+
+# Create mount point
+MOUNT_POINT="/mnt/yandex-disk"
+if [ ! -d "$MOUNT_POINT" ]; then
+    echo "📁 Creating mount point: $MOUNT_POINT"
+    sudo mkdir -p "$MOUNT_POINT"
+    sudo chown $USER:$USER "$MOUNT_POINT"
+    echo "✅ Mount point created"
+fi
 echo ""
 
 # Create installation directory
