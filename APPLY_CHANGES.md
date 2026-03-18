@@ -1,58 +1,81 @@
 # Применение изменений
 
-## Что изменено
+## ⚠️ ВАЖНО: Код на сервере устарел!
 
-1. ✅ Точка монтирования: `/mnt/yandex-disk` → `/mnt/cloud_tube`
-2. ✅ Конфигурация davfs2: `/home/cloudtube/.davfs2`
-3. ✅ Автоматическая проверка и установка прав на mount point
-4. ✅ Обновлена systemd конфигурация
-5. ✅ Обновлен скрипт установки
+Ошибка показывает, что на сервере запущена старая версия кода. Нужно применить изменения.
 
-## Команды для применения
+## Быстрое решение
 
 ```bash
-# Шаг 1: Сделать скрипт исполняемым
-chmod +x fix_cloudtube_home.sh
-
-# Шаг 2: Запустить скрипт (создаст все директории и установит права)
-sudo ./fix_cloudtube_home.sh
+# На сервере выполните:
+chmod +x deploy_changes.sh
+sudo ./deploy_changes.sh
 ```
 
-## Что делает скрипт
+Этот скрипт:
+1. Остановит сервис
+2. Скопирует новый код на сервер
+3. Создаст все необходимые директории
+4. Установит правильные права
+5. Перезапустит сервис
 
-1. Создает `/home/cloudtube` с правами `cloudtube:cloudtube`
-2. Создает `/home/cloudtube/.davfs2` с правами `700`
-3. Создает `/mnt/cloud_tube` с правами `cloudtube:cloudtube`
-4. Перезагружает systemd конфигурацию
-5. Перезапускает сервис cloudtube
-6. Показывает статус сервиса
+## Альтернативный способ (вручную)
 
-## Проверка результата
+Если скрипт не работает, выполните команды вручную:
 
 ```bash
-# Смотрим логи в реальном времени
+# 1. Остановить сервис
+sudo systemctl stop cloudtube
+
+# 2. Скопировать новый код (если вы в директории проекта)
+sudo cp bot/webdav.py /opt/CloudTube/bot/webdav.py
+sudo chown cloudtube:cloudtube /opt/CloudTube/bot/webdav.py
+
+# 3. Обновить systemd конфигурацию
+sudo cp systemd/cloudtube.service /etc/systemd/system/cloudtube.service
+sudo systemctl daemon-reload
+
+# 4. Создать директории
+sudo mkdir -p /home/cloudtube/.davfs2
+sudo chown cloudtube:cloudtube /home/cloudtube/.davfs2
+sudo chmod 700 /home/cloudtube/.davfs2
+
+sudo mkdir -p /mnt/cloud_tube
+sudo chown cloudtube:cloudtube /mnt/cloud_tube
+sudo chmod 755 /mnt/cloud_tube
+
+# 5. Запустить сервис
+sudo systemctl start cloudtube
+
+# 6. Проверить логи
 sudo journalctl -u cloudtube -f
 ```
 
-Должны увидеть:
+## Проверка результата
+
+После применения изменений в логах должно быть:
+
 ```
 Using davfs2 directory: /home/cloudtube/.davfs2
 Creating mount point /mnt/cloud_tube
-Mount point already owned by cloudtube
-Mounting WebDAV...
 ```
 
-## Если что-то пошло не так
+А НЕ:
+```
+Using davfs2 directory: /opt/CloudTube/.davfs2  ❌
+```
+
+## Если все еще ошибка
+
+Проверьте, что файл действительно обновлен:
 
 ```bash
-# Проверить права на директории
-ls -ld /home/cloudtube
-ls -ld /home/cloudtube/.davfs2
-ls -ld /mnt/cloud_tube
+# Проверить дату изменения файла
+ls -l /opt/CloudTube/bot/webdav.py
 
-# Проверить статус сервиса
-sudo systemctl status cloudtube
+# Проверить содержимое (должно быть /mnt/cloud_tube)
+grep "MOUNT_POINT" /opt/CloudTube/bot/webdav.py
 
-# Посмотреть последние ошибки
-sudo journalctl -u cloudtube -n 50 --no-pager
+# Должно вывести:
+# MOUNT_POINT = "/mnt/cloud_tube"
 ```
