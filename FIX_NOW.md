@@ -1,38 +1,72 @@
 # 🔥 СРОЧНОЕ ИСПРАВЛЕНИЕ
 
-## Проблема
-На сервере запущена **СТАРАЯ ВЕРСИЯ КОДА**!
-
-Ошибка:
+## Новая проблема
 ```
-OSError: [Errno 30] Read-only file system: '/opt/CloudTube/.davfs2'
+sudo: The "no new privileges" flag is set, which prevents sudo from running as root.
 ```
 
-Это значит, что код на сервере все еще пытается использовать `/opt/CloudTube/.davfs2` вместо `/home/cloudtube/.davfs2`.
+`NoNewPrivileges=true` в systemd блокирует sudo внутри процесса.
 
-## Решение за 1 команду
+## Решение
+
+Нужно дать пользователю `cloudtube` права на mount/umount без пароля через sudoers.
+
+### Автоматическое исправление
 
 ```bash
-chmod +x deploy_changes.sh && sudo ./deploy_changes.sh
+chmod +x deploy_changes.sh
+sudo ./deploy_changes.sh
 ```
 
-Этот скрипт:
-- ✅ Остановит сервис
-- ✅ Скопирует новый код
+Скрипт:
+- ✅ Установит sudoers правила для cloudtube
 - ✅ Создаст все директории
-- ✅ Установит права
+- ✅ Обновит код
 - ✅ Перезапустит сервис
+
+### Ручное исправление
+
+Если скрипт не работает:
+
+```bash
+# 1. Остановить сервис
+sudo systemctl stop cloudtube
+
+# 2. Установить sudoers правила
+sudo cp cloudtube-sudoers /etc/sudoers.d/cloudtube
+sudo chmod 440 /etc/sudoers.d/cloudtube
+
+# 3. Проверить синтаксис sudoers
+sudo visudo -c
+
+# 4. Создать директории
+sudo mkdir -p /home/cloudtube/.davfs2
+sudo chown cloudtube:cloudtube /home/cloudtube/.davfs2
+sudo chmod 700 /home/cloudtube/.davfs2
+
+sudo mkdir -p /mnt/cloud_tube
+sudo chown cloudtube:cloudtube /mnt/cloud_tube
+sudo chmod 755 /mnt/cloud_tube
+
+# 5. Обновить код
+sudo cp bot/webdav.py /opt/CloudTube/bot/webdav.py
+sudo chown cloudtube:cloudtube /opt/CloudTube/bot/webdav.py
+
+# 6. Обновить systemd
+sudo cp systemd/cloudtube.service /etc/systemd/system/cloudtube.service
+sudo systemctl daemon-reload
+
+# 7. Запустить
+sudo systemctl start cloudtube
+```
 
 ## Проверка
 
-После выполнения скрипта:
-
 ```bash
-# Проверить что код обновлен
-grep "MOUNT_POINT" /opt/CloudTube/bot/webdav.py
+# Проверить sudoers
+sudo -l -U cloudtube
 
-# Должно вывести:
-# MOUNT_POINT = "/mnt/cloud_tube"
+# Должно показать разрешенные команды mount/umount
 
 # Смотреть логи
 sudo journalctl -u cloudtube -f
@@ -40,38 +74,16 @@ sudo journalctl -u cloudtube -f
 
 В логах должно быть:
 ```
-✅ Using davfs2 directory: /home/cloudtube/.davfs2
-✅ Creating mount point /mnt/cloud_tube
+✅ Mount point /mnt/cloud_tube is ready
+✅ Mounting WebDAV...
+✅ WebDAV mounted successfully
 ```
 
-## Если скрипт не работает
+## Что делает sudoers конфигурация
 
-Скопируйте файлы вручную:
+Файл `/etc/sudoers.d/cloudtube` разрешает пользователю `cloudtube` выполнять БЕЗ ПАРОЛЯ:
+- `mount -t davfs` в `/mnt/cloud_tube`
+- `umount /mnt/cloud_tube`
+- Создание и настройку mount point (для первого запуска)
 
-```bash
-# 1. Остановить сервис
-sudo systemctl stop cloudtube
-
-# 2. Обновить код (ВАЖНО!)
-sudo cp bot/webdav.py /opt/CloudTube/bot/webdav.py
-sudo chown cloudtube:cloudtube /opt/CloudTube/bot/webdav.py
-
-# 3. Создать директории
-sudo mkdir -p /home/cloudtube/.davfs2
-sudo chown cloudtube:cloudtube /home/cloudtube/.davfs2
-sudo chmod 700 /home/cloudtube/.davfs2
-
-sudo mkdir -p /mnt/cloud_tube
-sudo chown cloudtube:cloudtube /mnt/cloud_tube
-
-# 4. Обновить systemd
-sudo cp systemd/cloudtube.service /etc/systemd/system/cloudtube.service
-sudo systemctl daemon-reload
-
-# 5. Запустить
-sudo systemctl start cloudtube
-```
-
-## Почему это произошло?
-
-Код был изменен локально, но изменения не были применены на сервере в `/opt/CloudTube/`. Сервис продолжал использовать старую версию файла `bot/webdav.py`.
+Это безопасно, так как разрешены только конкретные команды для конкретной директории.

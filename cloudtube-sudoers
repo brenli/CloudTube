@@ -1,0 +1,24 @@
+# Allow cloudtube user to mount/unmount davfs without password
+# This file should be placed in /etc/sudoers.d/cloudtube
+
+# Mount davfs
+cloudtube ALL=(ALL) NOPASSWD: /bin/mount -t davfs * /mnt/cloud_tube *
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/mount -t davfs * /mnt/cloud_tube *
+
+# Unmount
+cloudtube ALL=(ALL) NOPASSWD: /bin/umount /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/umount /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /bin/umount -l /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/umount -l /mnt/cloud_tube
+
+# Create mount point (one-time setup)
+cloudtube ALL=(ALL) NOPASSWD: /bin/mkdir -p /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/mkdir -p /mnt/cloud_tube
+
+# Set ownership (one-time setup)
+cloudtube ALL=(ALL) NOPASSWD: /bin/chown cloudtube\:cloudtube /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/chown cloudtube\:cloudtube /mnt/cloud_tube
+
+# Set permissions (one-time setup)
+cloudtube ALL=(ALL) NOPASSWD: /bin/chmod 755 /mnt/cloud_tube
+cloudtube ALL=(ALL) NOPASSWD: /usr/bin/chmod 755 /mnt/cloud_tube

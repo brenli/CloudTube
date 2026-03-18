@@ -66,58 +66,30 @@ class WebDAVService:
             username = user_info.pw_name
             gid = user_info.pw_gid
 
-            # Create mount point with sudo if doesn't exist
+            # Check if mount point exists
             if not os.path.exists(MOUNT_POINT):
-                logger.info(f"Creating mount point {MOUNT_POINT}")
-                process = await asyncio.create_subprocess_shell(
-                    f"sudo mkdir -p {MOUNT_POINT}",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                error_msg = (
+                    f"Mount point {MOUNT_POINT} does not exist. "
+                    f"Please create it first:\n"
+                    f"  sudo mkdir -p {MOUNT_POINT}\n"
+                    f"  sudo chown {username}:{gid} {MOUNT_POINT}\n"
+                    f"  sudo chmod 755 {MOUNT_POINT}"
                 )
-                stdout, stderr = await process.communicate()
-                
-                if process.returncode != 0:
-                    error_msg = stderr.decode() if stderr else "Unknown error"
-                    raise IOError(f"Failed to create mount point: {error_msg}")
-                
-                logger.info(f"Mount point created successfully")
-            
-            # Check and set ownership
-            try:
-                stat_info = os.stat(MOUNT_POINT)
-                current_uid = stat_info.st_uid
-                current_gid = stat_info.st_gid
-                
-                if current_uid != uid or current_gid != gid:
-                    logger.info(f"Setting owner of {MOUNT_POINT} to {username}:{gid}")
-                    process = await asyncio.create_subprocess_shell(
-                        f"sudo chown {username}:{gid} {MOUNT_POINT}",
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE
-                    )
-                    stdout, stderr = await process.communicate()
-                    
-                    if process.returncode != 0:
-                        error_msg = stderr.decode() if stderr else "Unknown error"
-                        logger.warning(f"Failed to set ownership: {error_msg}")
-                    else:
-                        logger.info(f"Mount point owner set successfully")
-                else:
-                    logger.info(f"Mount point already owned by {username}")
-                    
-            except Exception as e:
-                logger.warning(f"Could not check mount point ownership: {e}")
+                logger.error(error_msg)
+                raise IOError(error_msg)
             
             # Check write permissions
-            if os.path.exists(MOUNT_POINT) and not os.access(MOUNT_POINT, os.W_OK):
-                logger.info(f"Setting write permissions on {MOUNT_POINT}")
-                process = await asyncio.create_subprocess_shell(
-                    f"sudo chmod 755 {MOUNT_POINT}",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+            if not os.access(MOUNT_POINT, os.W_OK):
+                error_msg = (
+                    f"No write permission on {MOUNT_POINT}. "
+                    f"Please fix permissions:\n"
+                    f"  sudo chown {username}:{gid} {MOUNT_POINT}\n"
+                    f"  sudo chmod 755 {MOUNT_POINT}"
                 )
-                await process.communicate()
-                logger.info(f"Permissions set successfully")
+                logger.error(error_msg)
+                raise IOError(error_msg)
+            
+            logger.info(f"Mount point {MOUNT_POINT} is ready")
 
             # Setup davfs2 configuration
             await self._setup_davfs2()

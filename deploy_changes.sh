@@ -29,7 +29,18 @@ echo "Step 4: Updating systemd service file..."
 sudo cp systemd/cloudtube.service /etc/systemd/system/cloudtube.service
 
 echo ""
-echo "Step 5: Creating /home/cloudtube if needed..."
+echo "Step 5: Setting up sudoers for cloudtube user..."
+sudo cp cloudtube-sudoers /etc/sudoers.d/cloudtube
+sudo chmod 440 /etc/sudoers.d/cloudtube
+sudo visudo -c || {
+    echo "Error: sudoers syntax check failed!"
+    sudo rm /etc/sudoers.d/cloudtube
+    exit 1
+}
+echo "Sudoers configuration validated and installed"
+
+echo ""
+echo "Step 6: Creating /home/cloudtube if needed..."
 if [ ! -d "/home/cloudtube" ]; then
     sudo mkdir -p /home/cloudtube
     sudo chown cloudtube:cloudtube /home/cloudtube
@@ -37,7 +48,7 @@ if [ ! -d "/home/cloudtube" ]; then
 fi
 
 echo ""
-echo "Step 6: Creating /home/cloudtube/.davfs2..."
+echo "Step 7: Creating /home/cloudtube/.davfs2..."
 if [ ! -d "/home/cloudtube/.davfs2" ]; then
     sudo mkdir -p /home/cloudtube/.davfs2
     sudo chown cloudtube:cloudtube /home/cloudtube/.davfs2
@@ -45,7 +56,7 @@ if [ ! -d "/home/cloudtube/.davfs2" ]; then
 fi
 
 echo ""
-echo "Step 7: Creating /mnt/cloud_tube..."
+echo "Step 8: Creating /mnt/cloud_tube..."
 if [ ! -d "/mnt/cloud_tube" ]; then
     sudo mkdir -p /mnt/cloud_tube
 fi
@@ -53,15 +64,15 @@ sudo chown cloudtube:cloudtube /mnt/cloud_tube
 sudo chmod 755 /mnt/cloud_tube
 
 echo ""
-echo "Step 8: Reloading systemd configuration..."
+echo "Step 9: Reloading systemd configuration..."
 sudo systemctl daemon-reload
 
 echo ""
-echo "Step 9: Starting cloudtube service..."
+echo "Step 10: Starting cloudtube service..."
 sudo systemctl start cloudtube
 
 echo ""
-echo "Step 10: Checking service status..."
+echo "Step 11: Checking service status..."
 sleep 3
 sudo systemctl status cloudtube --no-pager -l
 
