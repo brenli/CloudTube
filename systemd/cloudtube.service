@@ -20,7 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=false
-ReadWritePaths=/opt/CloudTube/data /opt/CloudTube/logs /opt/CloudTube/temp /home/cloudtube/.davfs2 /mnt/yandex-disk
+ReadWritePaths=/opt/CloudTube/data /opt/CloudTube/logs /opt/CloudTube/temp /home/cloudtube/.davfs2 /mnt/cloud_tube
 
 [Install]
 WantedBy=multi-user.target

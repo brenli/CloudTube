@@ -18,7 +18,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-MOUNT_POINT = "/mnt/yandex-disk"
+MOUNT_POINT = "/mnt/cloud_tube"
 # DAVFS2 paths will be set dynamically in _setup_davfs2()
 DAVFS2_SECRETS = None
 DAVFS2_CONFIG = None
@@ -60,6 +60,12 @@ class WebDAVService:
         try:
             self._config = config
 
+            # Get current user info
+            uid = os.getuid()
+            user_info = pwd.getpwuid(uid)
+            username = user_info.pw_name
+            gid = user_info.pw_gid
+
             # Create mount point with sudo if doesn't exist
             if not os.path.exists(MOUNT_POINT):
                 logger.info(f"Creating mount point {MOUNT_POINT}")
@@ -68,21 +74,50 @@ class WebDAVService:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                await process.communicate()
+                stdout, stderr = await process.communicate()
                 
-                # Set owner to current user
-                uid = os.getuid()
-                user_info = pwd.getpwuid(uid)
-                username = user_info.pw_name
+                if process.returncode != 0:
+                    error_msg = stderr.decode() if stderr else "Unknown error"
+                    raise IOError(f"Failed to create mount point: {error_msg}")
                 
-                logger.info(f"Setting owner of {MOUNT_POINT} to {username}")
+                logger.info(f"Mount point created successfully")
+            
+            # Check and set ownership
+            try:
+                stat_info = os.stat(MOUNT_POINT)
+                current_uid = stat_info.st_uid
+                current_gid = stat_info.st_gid
+                
+                if current_uid != uid or current_gid != gid:
+                    logger.info(f"Setting owner of {MOUNT_POINT} to {username}:{gid}")
+                    process = await asyncio.create_subprocess_shell(
+                        f"sudo chown {username}:{gid} {MOUNT_POINT}",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    stdout, stderr = await process.communicate()
+                    
+                    if process.returncode != 0:
+                        error_msg = stderr.decode() if stderr else "Unknown error"
+                        logger.warning(f"Failed to set ownership: {error_msg}")
+                    else:
+                        logger.info(f"Mount point owner set successfully")
+                else:
+                    logger.info(f"Mount point already owned by {username}")
+                    
+            except Exception as e:
+                logger.warning(f"Could not check mount point ownership: {e}")
+            
+            # Check write permissions
+            if os.path.exists(MOUNT_POINT) and not os.access(MOUNT_POINT, os.W_OK):
+                logger.info(f"Setting write permissions on {MOUNT_POINT}")
                 process = await asyncio.create_subprocess_shell(
-                    f"sudo chown {username}:{username} {MOUNT_POINT}",
+                    f"sudo chmod 755 {MOUNT_POINT}",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
                 await process.communicate()
-                logger.info(f"Mount point owner set successfully")
+                logger.info(f"Permissions set successfully")
 
             # Setup davfs2 configuration
             await self._setup_davfs2()
@@ -118,12 +153,22 @@ class WebDAVService:
         """Setup davfs2 configuration"""
         try:
             # Get home directory of the user running the process
-            # Get current process user ID
-            uid = os.getuid()
-            user_info = pwd.getpwuid(uid)
-            home_dir = user_info.pw_dir
+            # Prefer HOME env var (set by systemd) over pwd database
+            home_dir = os.environ.get('HOME')
             
-            logger.info(f"Running as user: {user_info.pw_name} (uid={uid})")
+            if not home_dir:
+                # Fallback to pwd if HOME not set
+                uid = os.getuid()
+                user_info = pwd.getpwuid(uid)
+                home_dir = user_info.pw_dir
+                username = user_info.pw_name
+            else:
+                # Get username from pwd for logging
+                uid = os.getuid()
+                user_info = pwd.getpwuid(uid)
+                username = user_info.pw_name
+            
+            logger.info(f"Running as user: {username} (uid={uid})")
             logger.info(f"User home directory: {home_dir}")
             
             davfs2_dir = os.path.join(home_dir, '.davfs2')

@@ -5,29 +5,48 @@
 OSError: [Errno 30] Read-only file system: '/opt/CloudTube/.davfs2'
 ```
 
-Сервис пытался создать директорию `.davfs2` в `/opt/CloudTube/`, которая является read-only или принадлежит root.
+Сервис пытался создать директорию `.davfs2` в `/opt/CloudTube/`, которая защищена `ProtectSystem=strict` в systemd.
 
 ## Причина
-Код использовал переменные окружения `HOME`, `USER`, `USERNAME` для определения домашней директории пользователя. При запуске через systemd эти переменные могут быть не установлены или указывать на неправильные пути.
+1. Пользователь `cloudtube` был создан с домашней директорией `/opt/CloudTube` в `/etc/passwd`
+2. Systemd устанавливает `HOME=/home/cloudtube` в переменных окружения
+3. Но `pwd.getpwuid()` возвращает `/opt/CloudTube` из базы данных пользователей
+4. `ProtectSystem=strict` делает `/opt/CloudTube` read-only для безопасности
 
 ## Решение
-Заменил определение домашней директории на использование модуля `pwd`:
+
+### 1. Исправлен код в bot/webdav.py
+Теперь приоритет отдается переменной окружения `HOME` (установленной systemd), а не базе данных `pwd`:
 
 ```python
-import pwd
+# Prefer HOME env var (set by systemd) over pwd database
+home_dir = os.environ.get('HOME')
 
-uid = os.getuid()
-user_info = pwd.getpwuid(uid)
-home_dir = user_info.pw_dir
-username = user_info.pw_name
+if not home_dir:
+    # Fallback to pwd if HOME not set
+    uid = os.getuid()
+    user_info = pwd.getpwuid(uid)
+    home_dir = user_info.pw_dir
 ```
 
-## Изменения в bot/webdav.py
+### 2. Создан скрипт fix_cloudtube_home.sh
+Скрипт создает и настраивает `/home/cloudtube`:
 
-1. Добавлен импорт `pwd` в начало файла
-2. Метод `_setup_davfs2()`: использует `pwd.getpwuid(os.getuid())` вместо переменных окружения
-3. Метод `connect()`: использует `pwd.getpwuid(os.getuid())` для определения владельца mount point
-4. Метод `_mount_webdav()`: использует `pwd.getpwuid(os.getuid())` для получения uid/gid
+```bash
+chmod +x fix_cloudtube_home.sh
+sudo ./fix_cloudtube_home.sh
+```
+
+Скрипт:
+- Создает `/home/cloudtube` если не существует
+- Устанавливает правильные права доступа
+- Создает `/home/cloudtube/.davfs2`
+- Перезапускает сервис
+
+### 3. Systemd конфигурация
+В `systemd/cloudtube.service` уже настроено:
+- `Environment="HOME=/home/cloudtube"` - устанавливает HOME
+- `ReadWritePaths=/home/cloudtube/.davfs2` - разрешает запись в .davfs2
 
 ## Результат
-Теперь код корректно определяет домашнюю директорию пользователя, под которым запущен процесс, независимо от переменных окружения. Директория `.davfs2` будет создана в правильном месте (например, `/root/.davfs2` или `/home/username/.davfs2`).
+Теперь `.davfs2` создается в `/home/cloudtube/.davfs2`, который доступен для записи и разрешен в systemd конфигурации.
