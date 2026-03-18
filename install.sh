@@ -149,9 +149,31 @@ echo ""
 
 # Install systemd service
 echo "🔧 Installing systemd service..."
+
+# Create cloudtube user home directory if doesn't exist
+if [ ! -d "/home/$USER" ]; then
+    echo "📁 Creating home directory for user $USER..."
+    sudo mkdir -p "/home/$USER"
+    sudo chown $USER:$USER "/home/$USER"
+fi
+
+# Setup davfs2 for the user
+echo "🔧 Setting up davfs2 for user $USER..."
+mkdir -p "/home/$USER/.davfs2"
+if [ ! -f "/home/$USER/.davfs2/davfs2.conf" ]; then
+    cat > "/home/$USER/.davfs2/davfs2.conf" << 'EOF'
+# davfs2 configuration
+use_locks 0
+cache_size 50
+delay_upload 0
+EOF
+    echo "✅ davfs2 configuration created"
+fi
+
 sudo cp systemd/cloudtube.service /etc/systemd/system/
 sudo sed -i "s|/opt/CloudTube|$INSTALL_DIR|g" /etc/systemd/system/cloudtube.service
-sudo sed -i "s|User=youtube-bot|User=$USER|g" /etc/systemd/system/cloudtube.service
+sudo sed -i "s|User=cloudtube|User=$USER|g" /etc/systemd/system/cloudtube.service
+sudo sed -i "s|/home/cloudtube|/home/$USER|g" /etc/systemd/system/cloudtube.service
 
 sudo systemctl daemon-reload
 sudo systemctl enable cloudtube

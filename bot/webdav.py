@@ -67,6 +67,18 @@ class WebDAVService:
                     stderr=asyncio.subprocess.PIPE
                 )
                 await process.communicate()
+                
+                # Set owner to current user
+                username = os.getenv('USER') or os.getenv('USERNAME')
+                if username:
+                    logger.info(f"Setting owner of {MOUNT_POINT} to {username}")
+                    process = await asyncio.create_subprocess_shell(
+                        f"sudo chown {username}:{username} {MOUNT_POINT}",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE
+                    )
+                    await process.communicate()
+                    logger.info(f"Mount point owner set successfully")
 
             # Setup davfs2 configuration
             await self._setup_davfs2()
@@ -101,9 +113,26 @@ class WebDAVService:
     async def _setup_davfs2(self) -> None:
         """Setup davfs2 configuration"""
         try:
+            # Get home directory - use HOME env var or fallback to /root
+            home_dir = os.environ.get('HOME')
+            if not home_dir:
+                # Try to get from USER env var
+                user = os.environ.get('USER', 'root')
+                if user == 'root':
+                    home_dir = '/root'
+                else:
+                    home_dir = f'/home/{user}'
+            
+            davfs2_dir = os.path.join(home_dir, '.davfs2')
+            logger.info(f"Using davfs2 directory: {davfs2_dir}")
+            
             # Create .davfs2 directory
-            davfs2_dir = os.path.expanduser("~/.davfs2")
             os.makedirs(davfs2_dir, exist_ok=True)
+
+            # Update paths to use correct home directory
+            global DAVFS2_SECRETS, DAVFS2_CONFIG
+            DAVFS2_SECRETS = os.path.join(davfs2_dir, 'secrets')
+            DAVFS2_CONFIG = os.path.join(davfs2_dir, 'davfs2.conf')
 
             # Create config file if doesn't exist
             if not os.path.exists(DAVFS2_CONFIG):
@@ -117,25 +146,27 @@ delay_upload 0
                 logger.info(f"Created davfs2 config: {DAVFS2_CONFIG}")
 
         except Exception as e:
-            logger.error(f"Failed to setup davfs2: {e}")
+            logger.error(f"Failed to setup davfs2: {e}", exc_info=True)
             raise
 
     async def _save_credentials(self) -> None:
         """Save WebDAV credentials to davfs2 secrets file"""
         try:
-            # Create secrets file
+            # DAVFS2_SECRETS should be already set by _setup_davfs2
             secrets_content = f"{self._config.url} {self._config.username} {self._config.password}\n"
 
+            logger.info(f"Saving credentials to {DAVFS2_SECRETS}")
+            
             with open(DAVFS2_SECRETS, 'w') as f:
                 f.write(secrets_content)
 
             # Set proper permissions (600)
             os.chmod(DAVFS2_SECRETS, 0o600)
 
-            logger.info(f"Saved credentials to {DAVFS2_SECRETS}")
+            logger.info(f"Credentials saved successfully")
 
         except Exception as e:
-            logger.error(f"Failed to save credentials: {e}")
+            logger.error(f"Failed to save credentials: {e}", exc_info=True)
             raise
 
     async def _mount_webdav(self) -> bool:
