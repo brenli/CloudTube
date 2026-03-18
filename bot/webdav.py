@@ -18,8 +18,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 MOUNT_POINT = "/mnt/yandex-disk"
-DAVFS2_SECRETS = os.path.expanduser("~/.davfs2/secrets")
-DAVFS2_CONFIG = os.path.expanduser("~/.davfs2/davfs2.conf")
+# DAVFS2 paths will be set dynamically in _setup_davfs2()
+DAVFS2_SECRETS = None
+DAVFS2_CONFIG = None
 
 
 @dataclass

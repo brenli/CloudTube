@@ -1,0 +1,151 @@
+═══════════════════════════════════════════════════════════════
+  ИСПРАВЛЕНИЕ ОШИБКИ DAVFS2 - ПОШАГОВАЯ ИНСТРУКЦИЯ
+═══════════════════════════════════════════════════════════════
+
+ПРОБЛЕМА:
+Failed to setup davfs2: [Errno 30] Read-only file system: '/opt/CloudTube/.davfs2'
+
+ПРИЧИНА:
+Старая версия кода пытается создать .davfs2 в /opt/CloudTube/ вместо домашней директории
+
+═══════════════════════════════════════════════════════════════
+  РЕШЕНИЕ (выберите один из вариантов)
+═══════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────┐
+│ ВАРИАНТ 1: Автоматическое исправление (РЕКОМЕНДУЕТСЯ)      │
+└─────────────────────────────────────────────────────────────┘
+
+1. Остановить бота:
+   sudo systemctl stop cloudtube
+
+2. Обновить код:
+   cd /opt/CloudTube
+   git pull
+
+3. Применить исправления:
+   sudo bash fix_davfs2_permissions.sh
+
+4. Проверить:
+   sudo systemctl status cloudtube
+   sudo journalctl -u cloudtube -f
+
+┌─────────────────────────────────────────────────────────────┐
+│ ВАРИАНТ 2: Ручное исправление (если git не работает)       │
+└─────────────────────────────────────────────────────────────┘
+
+1. Остановить бота:
+   sudo systemctl stop cloudtube
+
+2. Узнать пользователя:
+   SERVICE_USER=$(grep "^User=" /etc/systemd/system/cloudtube.service | cut -d'=' -f2)
+   echo "User: $SERVICE_USER"
+
+3. Создать домашнюю директорию:
+   sudo mkdir -p "/home/$SERVICE_USER/.davfs2"
+   sudo chown -R $SERVICE_USER:$SERVICE_USER "/home/$SERVICE_USER"
+
+4. Создать конфигурацию davfs2:
+   sudo tee "/home/$SERVICE_USER/.davfs2/davfs2.conf" > /dev/null << 'EOF'
+# davfs2 configuration
+use_locks 0
+cache_size 50
+delay_upload 0
+EOF
+
+5. Создать точку монтирования:
+   sudo mkdir -p /mnt/yandex-disk
+   sudo chown $SERVICE_USER:$SERVICE_USER /mnt/yandex-disk
+
+6. Отредактировать systemd сервис:
+   sudo nano /etc/systemd/system/cloudtube.service
+
+   Найти строку:
+   ProtectHome=true
+
+   Заменить на:
+   Environment="HOME=/home/cloudtube"
+   ProtectHome=false
+   ReadWritePaths=/opt/CloudTube/data /opt/CloudTube/logs /opt/CloudTube/temp /home/cloudtube/.davfs2 /mnt/yandex-disk
+
+   (Замените cloudtube на вашего пользователя!)
+
+7. Перезагрузить и запустить:
+   sudo systemctl daemon-reload
+   sudo systemctl start cloudtube
+
+8. Проверить:
+   sudo systemctl status cloudtube
+
+┌─────────────────────────────────────────────────────────────┐
+│ ВАРИАНТ 3: Обновить только код (если systemd уже настроен) │
+└─────────────────────────────────────────────────────────────┘
+
+1. Остановить бота:
+   sudo systemctl stop cloudtube
+
+2. Скачать обновленный webdav.py:
+   cd /opt/CloudTube
+   sudo cp bot/webdav.py bot/webdav.py.backup
+   sudo wget -O bot/webdav.py https://raw.githubusercontent.com/brenli/CloudTube/main/bot/webdav.py
+
+3. Запустить:
+   sudo systemctl start cloudtube
+
+═══════════════════════════════════════════════════════════════
+  ПРОВЕРКА ПОСЛЕ ИСПРАВЛЕНИЯ
+═══════════════════════════════════════════════════════════════
+
+1. Проверить статус:
+   sudo systemctl status cloudtube
+
+   Должно быть: active (running)
+
+2. Проверить логи:
+   sudo journalctl -u cloudtube -n 50
+
+   Должно быть:
+   ✓ "Using davfs2 directory: /home/cloudtube/.davfs2"
+
+   НЕ должно быть:
+   ✗ "Failed to setup davfs2: [Errno 30] Read-only file system"
+
+3. Проверить файлы:
+   SERVICE_USER=$(grep "^User=" /etc/systemd/system/cloudtube.service | cut -d'=' -f2)
+   sudo ls -la "/home/$SERVICE_USER/.davfs2/"
+
+   Должны быть:
+   - davfs2.conf
+
+4. В Telegram выполнить:
+   /connect https://webdav.yandex.ru email@yandex.ru oauth_token
+
+   Должен ответить:
+   ✓ "✅ Успешно подключено к Yandex.Disk"
+
+═══════════════════════════════════════════════════════════════
+  ПОЛУЧЕНИЕ OAUTH ТОКЕНА (если нужен)
+═══════════════════════════════════════════════════════════════
+
+cd /opt/CloudTube
+source venv/bin/activate
+python get_yandex_token.py
+
+Или вручную:
+https://oauth.yandex.ru/authorize?response_type=token&client_id=23cabbbdc6cd418abb4b39c32c41195d
+
+═══════════════════════════════════════════════════════════════
+  ПОМОЩЬ
+═══════════════════════════════════════════════════════════════
+
+Документация:
+- APPLY_FIX_NOW.md - Подробная инструкция
+- UPDATE_WEBDAV_FIX.md - Детальное описание проблемы
+- YANDEX_DISK_SETUP.md - Полная настройка Яндекс.Диска
+
+Если проблемы остались:
+1. Проверьте логи: sudo journalctl -u cloudtube -f
+2. Проверьте переменные: sudo systemctl show cloudtube | grep Environment
+3. Проверьте права: ls -la /home/*/. davfs2/
+
+═══════════════════════════════════════════════════════════════
